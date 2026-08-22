@@ -1,9 +1,10 @@
 ---
 title: "#1 Repository skeleton (uv, src layout, ruff, pyright strict, CI)"
-status: open
+status: done
 area: harness
 owner: null
 filed: 2026-08-22
+fixed_in: d2a1e69
 scope: M
 verify: test
 ---

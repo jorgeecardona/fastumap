@@ -70,14 +70,8 @@ cabildo issues show <slug>
 | [#14 Cosine metric (the one that matters for text embeddings)](22-08-2026-14-cosine-metric-the-one-that-matters-for-text-embeddings.md) | capability | M | test | open | — |
 | [#15 Approximate kNN behind an extra, for above ~50k points](22-08-2026-15-approximate-knn-behind-an-extra-for-above-50k-points.md) | capability | L | test | open | — |
 | [#16 Sparse input: decide whether to support it at all](22-08-2026-16-sparse-input-decide-whether-to-support-it-at-all.md) | capability | S | inspect | open | — |
-| [#1 Repository skeleton (uv, src layout, ruff, pyright strict, CI)](22-08-2026-1-repository-skeleton-uv-src-layout-ruff-pyright-strict-ci.md) | harness | M | test | open | — |
-| [#2 Port seed implementation into modules (neighbors, graph, layout, metrics)](22-08-2026-2-port-seed-implementation-into-modules-neighbors-graph-layout-metrics.md) | harness | L | test | open | — |
-| [#3 Grading harness: neighbor_overlap + Spearman dist-corr, controls, fixtures](22-08-2026-3-grading-harness-neighbor-overlap-spearman-dist-corr-controls-fixtures.md) | harness | M | test | open | — |
-| [#4 umap-learn as a test-only dependency, absent from runtime](22-08-2026-4-umap-learn-as-a-test-only-dependency-absent-from-runtime.md) | harness | S | test | open | — |
-| [#10 Determinism test across processes (bit-identical bytes)](22-08-2026-10-determinism-test-across-processes-bit-identical-bytes.md) | production | S | test | open | — |
 | [#11 Thread safety: concurrent projections from asyncio.to_thread](22-08-2026-11-thread-safety-concurrent-projections-from-asyncio-to-thread.md) | production | S | test | open | — |
 | [#12 Time-budget test at 1000 and 5000 points under a single-core cap](22-08-2026-12-time-budget-test-at-1000-and-5000-points-under-a-single.md) | production | M | test | open | — |
-| [#8 Import-cost test: subprocess import under 200ms](22-08-2026-8-import-cost-test-subprocess-import-under-200ms.md) | production | XS | test | open | — |
 | [#9 Memory ceiling test: peak RSS at 5000x1024 under a stated bound](22-08-2026-9-memory-ceiling-test-peak-rss-at-5000x1024-under-a-stated-bound.md) | production | S | test | open | — |
 | [#5 Match umap-learn's negative-sample schedule](22-08-2026-5-match-umap-learn-s-negative-sample-schedule.md) | quality | S | test | open | — |
 | [#6 Partial in-epoch feedback (shuffled chunks) in the optimiser](22-08-2026-6-partial-in-epoch-feedback-shuffled-chunks-in-the-optimiser.md) | quality | M | test | open | — |
@@ -85,5 +79,5 @@ cabildo issues show <slug>
 | [#17 README leads with the two numbers that justify the library](22-08-2026-17-readme-leads-with-the-two-numbers-that-justify-the-library.md) | release | S | inspect | open | — |
 | [#18 Publish to PyPI (OIDC Trusted Publishing), independent-reimplementation notice](22-08-2026-18-publish-to-pypi-oidc-trusted-publishing-independent-reimplementation-notice.md) | release | M | probe | open | — |
 
-_18 open — 18 open. Generated; edit the files, then `cabildo issues reindex`._
+_12 open — 12 open; 6 done. Generated; edit the files, then `cabildo issues reindex`._
 <!-- END GENERATED INDEX -->

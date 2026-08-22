@@ -1,9 +1,10 @@
 ---
 title: "#3 Grading harness: neighbor_overlap + Spearman dist-corr, controls, fixtures"
-status: open
+status: done
 area: harness
 owner: null
 filed: 2026-08-22
+fixed_in: d2a1e69
 scope: M
 verify: test
 ---

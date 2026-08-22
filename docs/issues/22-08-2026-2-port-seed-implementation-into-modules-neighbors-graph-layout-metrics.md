@@ -1,9 +1,10 @@
 ---
 title: "#2 Port seed implementation into modules (neighbors, graph, layout, metrics)"
-status: open
+status: done
 area: harness
 owner: null
 filed: 2026-08-22
+fixed_in: d2a1e69
 scope: L
 verify: test
 ---

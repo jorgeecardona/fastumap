@@ -1,9 +1,10 @@
 ---
 title: "#8 Import-cost test: subprocess import under 200ms"
-status: open
+status: done
 area: production
 owner: null
 filed: 2026-08-22
+fixed_in: d2a1e69
 scope: XS
 verify: test
 ---
