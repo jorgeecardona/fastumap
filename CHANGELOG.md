@@ -5,6 +5,18 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-08-23
+
+### Fixed
+- `compute_membership`: clamp the exponent argument at 0 before `np.exp` so the discarded
+  `np.where` branch no longer raises `overflow encountered in exp` at scale. Output is
+  value-identical (only the masked-out branch changed); determinism preserved.
+
+### Added
+- Peak-RSS ceiling test (roadmap #9): a subprocess measures peak RSS for a 5000 × 1024 fit
+  and asserts it stays under 200 MB. Measured ~102 MB added over the import+input baseline
+  (175 MB total peak), consistent with the 512-row blocked kNN never materialising n-by-n.
+
 ## [0.1.1] - 2026-08-23
 
 ### Added

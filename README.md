@@ -97,7 +97,8 @@ stable across reloads so people can compare the picture over time). `umap_projec
 - **Deterministic** — pinned ARPACK start vector, seeded negative sampler; identical bytes
   across processes.
 - **Memory bounded** — the n-by-n distance matrix is never materialised (512-row blocked
-  kNN).
+  kNN). At the worst case (5000 × 1024) the fit adds ~102 MB over the import+input baseline
+  (175 MB total peak); the test enforces a 200 MB ceiling.
 - **2-D and 3-D**, both first-class. **Typed**, pyright strict.
 
 ## Releasing

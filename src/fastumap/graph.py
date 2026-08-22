@@ -106,7 +106,11 @@ def compute_membership(
     """
     n, k = knn_indices.shape
     offset = knn_dists - rho[:, None]
-    vals = np.where(offset <= 0.0, 1.0, np.exp(-offset / sigma[:, None]))
+    # np.where evaluates both branches, so clamp the exponent's argument at 0 before the
+    # exp: where offset <= 0 the result is discarded anyway, and this avoids a spurious
+    # `overflow encountered in exp` warning (-offset can be large positive there).
+    weight = np.exp(-np.maximum(offset, 0.0) / sigma[:, None])
+    vals = np.where(offset <= 0.0, 1.0, weight)
 
     rows = np.repeat(np.arange(n, dtype=np.int64), k)
     cols = knn_indices.reshape(-1).astype(np.int64)
