@@ -99,6 +99,10 @@ stable across reloads so people can compare the picture over time). `umap_projec
 - **Memory bounded** — the n-by-n distance matrix is never materialised (512-row blocked
   kNN). At the worst case (5000 × 1024) the fit adds ~102 MB over the import+input baseline
   (175 MB total peak); the test enforces a 200 MB ceiling.
+- **Time budgeted** — single-thread wall-clock ~7.7 s at 1000 × 1024, ~39.5 s at
+  5000 × 1024; a CI test measures under a single-core cap and fails on a regression past a
+  generous ceiling (25 s / 120 s). The SGD scatter dominates — the number is honest, not
+  yet fast; speeding it up is tracked.
 - **2-D and 3-D**, both first-class. **Typed**, pyright strict.
 
 ## Releasing
