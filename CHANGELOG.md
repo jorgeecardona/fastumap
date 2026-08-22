@@ -5,6 +5,15 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-08-23
+
+### Changed
+- `optimize_layout` scatter: replace `np.add.at` with one per-dimension `np.bincount`
+  reduction (#19). ~31% faster at n=1000×1024 (7.7s → 5.3s single-thread), ~19% at
+  n=5000 (39.5s → 32.1s). overlap@15 unchanged within noise (n=1000 0.2338 → 0.2331,
+  n=2000 0.1387 → 0.1381); determinism preserved. Bytes differ from 0.1.2 (bincount sums
+  in a different float order), which is expected and does not affect quality.
+
 ## [0.1.2] - 2026-08-23
 
 ### Fixed

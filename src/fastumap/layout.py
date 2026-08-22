@@ -19,6 +19,18 @@ _INIT_NOISE = 1e-4
 _GRAD_CLIP = 4.0
 
 
+def _scatter_add(target: FloatArray, idx: IntArray, values: FloatArray) -> None:
+    """In-place ``target[idx] += values`` accumulating duplicate indices.
+
+    Replaces ``np.add.at`` (a slow element-by-element scatter) with one compiled
+    ``np.bincount`` reduction per output dimension. The embedding is only 2-3 dims, so
+    this is a handful of bincounts and dominates the SGD's speed. Deterministic.
+    """
+    n, dim = target.shape
+    for d in range(dim):
+        target[:, d] += np.bincount(idx, weights=values[:, d], minlength=n)
+
+
 def spectral_layout(graph: FuzzyGraph, dim: int, *, rng: np.random.Generator) -> FloatArray:
     """Spectral initialisation, rescaled to max|coord|=10 with tiny Gaussian noise."""
     n_components, labels = _scipy.connected_components(graph.n, graph.head, graph.tail)
@@ -144,8 +156,8 @@ def optimize_layout(
             1.0 + a * np.power(d2_nz, b)
         )
         grad = np.clip(attract_coeff[:, None] * diff, -_GRAD_CLIP, _GRAD_CLIP) * alpha
-        np.add.at(delta, h, grad)
-        np.add.at(delta, t, -grad)
+        _scatter_add(delta, h, grad)
+        _scatter_add(delta, t, -grad)
 
         for _sample in range(negative_sample_rate):
             k_samp: IntArray = rng.integers(0, n_vertices, size=edge_idx.shape[0])
@@ -166,7 +178,7 @@ def optimize_layout(
                 * alpha
             )
             grad_n[k_samp == h] = 0.0  # a vertex never repels itself (umap `continue`)
-            np.add.at(delta, h, grad_n)
+            _scatter_add(delta, h, grad_n)
 
         return delta
 
