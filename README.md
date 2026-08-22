@@ -104,6 +104,14 @@ Same input and seed give **bit-identical** output across processes (the layout m
 stable across reloads so people can compare the picture over time). `umap_project` takes
 `n_neighbors`, `min_dist`, `spread`, `n_epochs`, `negative_sample_rate`, `random_state`.
 
+## Sparse input
+
+Not supported — `umap_project`/`fit` take a **dense** numpy array. The blocked kNN relies
+on dense BLAS matmul, and the target workload is dense encoder/CLS embeddings, so a native
+sparse distance path is out of scope. Passing a `scipy.sparse` matrix raises a `TypeError`
+telling you to densify first (`matrix.toarray()`). Revisit if a sparse workload actually
+shows up.
+
 ## Guarantees (enforced by tests)
 
 - **numpy + scipy only** at runtime — no numba, llvmlite, scikit-learn, or compiled

@@ -5,6 +5,15 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-08-23
+
+### Changed
+- Sparse input decision (#16): **not supported**. `umap_project`/`fit`/`transform` take a
+  dense numpy array; a `scipy.sparse` matrix now raises a clear `TypeError` pointing to
+  `.toarray()` instead of a cryptic failure. Rationale documented in README ("Sparse
+  input"): the blocked kNN uses dense BLAS matmul and the target workload is dense
+  encoder/CLS embeddings. Revisit if a sparse workload actually appears.
+
 ## [0.1.5] - 2026-08-23
 
 ### Added

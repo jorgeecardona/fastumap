@@ -69,6 +69,14 @@ def test_disconnected_graph_does_not_collapse() -> None:
     assert float(np.ptp(emb)) > 0.0
 
 
+def test_sparse_input_rejected_with_helpful_error() -> None:
+    from scipy import sparse
+
+    x = sparse.random(60, 20, density=0.1, format="csr")
+    with pytest.raises(TypeError, match="sparse"):
+        umap_project(x, 2)  # pyright: ignore[reportArgumentType]
+
+
 def test_barely_above_minimum() -> None:
     x = barely_above_minimum()
     emb = umap_project(x, 2, random_state=1, n_epochs=50)

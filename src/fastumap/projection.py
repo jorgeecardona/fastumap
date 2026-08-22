@@ -25,6 +25,15 @@ def _default_epochs(n: int) -> int:
 
 
 def _validate(matrix: FloatArray, dimensions: int) -> FloatArray:
+    # Sparse input is out of scope (see README "Sparse input"): the blocked kNN relies on
+    # dense BLAS matmul, and the target workload is dense encoder/CLS embeddings. Detect a
+    # sparse matrix by its `toarray` method and fail with a clear pointer rather than the
+    # cryptic error np.ascontiguousarray would raise on it.
+    if hasattr(matrix, "toarray"):  # scipy.sparse matrices have it; numpy arrays do not
+        raise TypeError(
+            "fastumap takes a dense numpy array, not a sparse matrix; "
+            "densify first with matrix.toarray() (sparse input is not supported — see README)"
+        )
     x = np.ascontiguousarray(matrix, dtype=np.float64)
     if x.ndim != 2:
         raise ValueError("matrix must be 2-D (n_samples, n_features)")
