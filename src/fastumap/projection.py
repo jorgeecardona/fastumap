@@ -37,6 +37,7 @@ def umap_project(
     negative_sample_rate: int = 5,
     random_state: int = 42,
     metric: str = "euclidean",
+    chunk_count: int = 1,
 ) -> FloatArray:
     """Project ``matrix`` (n_samples, n_features) into ``dimensions`` (2 or 3).
 
@@ -63,6 +64,7 @@ def umap_project(
         b=b,
         rng=rng,
         negative_sample_rate=negative_sample_rate,
+        chunk_count=chunk_count,
     )
 
 

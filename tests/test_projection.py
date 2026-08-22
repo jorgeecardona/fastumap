@@ -74,3 +74,19 @@ def test_barely_above_minimum() -> None:
     emb = umap_project(x, 2, random_state=1, n_epochs=50)
     assert emb.shape == (5, 2)
     assert bool(np.all(np.isfinite(emb)))
+
+
+def test_chunk_count_one_matches_default() -> None:
+    # chunk_count=1 is the snapshot path and must reproduce the default byte-for-byte.
+    x, _ = gaussian_clusters(n=200)
+    default = umap_project(x, 2, random_state=9, n_epochs=100)
+    explicit = umap_project(x, 2, random_state=9, n_epochs=100, chunk_count=1)
+    assert np.array_equal(default, explicit)
+
+
+def test_chunk_count_feedback_deterministic_and_finite() -> None:
+    x, _ = gaussian_clusters(n=300)
+    first = umap_project(x, 2, random_state=5, n_epochs=100, chunk_count=8)
+    second = umap_project(x, 2, random_state=5, n_epochs=100, chunk_count=8)
+    assert np.array_equal(first, second)  # in-epoch feedback stays deterministic
+    assert bool(np.all(np.isfinite(first)))

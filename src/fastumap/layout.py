@@ -110,13 +110,18 @@ def optimize_layout(
     negative_sample_rate: int = 5,
     gamma: float = 1.0,
     initial_alpha: float = 1.0,
+    chunk_count: int = 1,
 ) -> FloatArray:
     """Attract/repel SGD over the graph edges.
 
-    Per-epoch snapshot update: every gradient in an epoch is computed from the same
-    positions, then applied together. Attraction pulls both ends of a due edge;
-    repulsion pushes the head away from ``negative_sample_rate`` uniform samples.
-    Every gradient component is clamped to +/-4.
+    ``chunk_count`` controls in-epoch feedback. With ``chunk_count <= 1`` (default) every
+    gradient in an epoch is computed from one snapshot and applied together — fully
+    reproducible and the historical behaviour. With ``chunk_count > 1`` the epoch's due
+    edges are shuffled and processed in that many chunks, each computed from the positions
+    the previous chunks already moved — a partial-feedback middle ground between the
+    snapshot update and umap-learn's in-place (Hogwild) walk. Attraction pulls both ends of
+    a due edge; repulsion pushes the head away from ``negative_sample_rate`` uniform
+    samples. Every gradient component is clamped to +/-4.
     """
     head = graph.head
     tail = graph.tail
@@ -125,17 +130,12 @@ def optimize_layout(
     emb = np.ascontiguousarray(embedding, dtype=np.float64)
     n_vertices = emb.shape[0]
 
-    for epoch in range(n_epochs):
-        alpha = initial_alpha * (1.0 - epoch / n_epochs)
-        due: IntArray = np.where((epoch_of_next <= epoch) & (epochs_per_sample > 0.0))[0]
-        if due.shape[0] == 0:
-            continue
+    def edge_delta(edge_idx: IntArray, positions: FloatArray, alpha: float) -> FloatArray:
+        h = head[edge_idx]
+        t = tail[edge_idx]
+        delta = np.zeros_like(positions)
 
-        h = head[due]
-        t = tail[due]
-        delta = np.zeros_like(emb)
-
-        diff = emb[h] - emb[t]
+        diff = positions[h] - positions[t]
         d2: FloatArray = np.einsum("ij,ij->i", diff, diff)
         attract_coeff = np.zeros_like(d2)
         nonzero = d2 > 0.0
@@ -148,8 +148,8 @@ def optimize_layout(
         np.add.at(delta, t, -grad)
 
         for _sample in range(negative_sample_rate):
-            k_samp: IntArray = rng.integers(0, n_vertices, size=due.shape[0])
-            diff_n = emb[h] - emb[k_samp]
+            k_samp: IntArray = rng.integers(0, n_vertices, size=edge_idx.shape[0])
+            diff_n = positions[h] - positions[k_samp]
             d2n: FloatArray = np.einsum("ij,ij->i", diff_n, diff_n)
             repel_coeff = np.zeros_like(d2n)
             positive = d2n > 0.0
@@ -168,7 +168,23 @@ def optimize_layout(
             grad_n[k_samp == h] = 0.0  # a vertex never repels itself (umap `continue`)
             np.add.at(delta, h, grad_n)
 
-        emb = emb + delta
+        return delta
+
+    for epoch in range(n_epochs):
+        alpha = initial_alpha * (1.0 - epoch / n_epochs)
+        due: IntArray = np.where((epoch_of_next <= epoch) & (epochs_per_sample > 0.0))[0]
+        if due.shape[0] == 0:
+            continue
+
+        if chunk_count <= 1:
+            emb = emb + edge_delta(due, emb, alpha)
+        else:
+            shuffled = due[rng.permutation(due.shape[0])]
+            for chunk in np.array_split(shuffled, chunk_count):
+                if chunk.shape[0] == 0:
+                    continue
+                emb = emb + edge_delta(chunk, emb, alpha)
+
         epoch_of_next[due] += epochs_per_sample[due]
 
     return emb

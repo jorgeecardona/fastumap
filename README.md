@@ -47,10 +47,22 @@ equally-good embeddings.
 | pca | 0.165 ± 0.001 | 0.843 ± 0.012 |
 | random | 0.015 ± 0.001 | −0.003 ± 0.003 |
 
-fastumap trails umap-learn by ~0.014 on local neighbourhood overlap (the target of the
-in-progress optimiser work: negative-sample schedule and in-epoch feedback) and is well
+fastumap (default) trails umap-learn by ~0.014 on local neighbourhood overlap and is well
 ahead on global structure. Both beat PCA on local overlap and crush the random control.
-The real-data benchmark (MNIST / Fashion-MNIST at 5k/10k/20k) lands here next — roadmap #7.
+
+**Quality knob — `chunk_count`.** The optimiser defaults to a per-epoch snapshot update
+(`chunk_count=1`), the fast path the 0.5-vCPU service needs. Raising `chunk_count` processes
+each epoch's edges in that many shuffled chunks so later chunks see earlier moves (partial
+in-epoch feedback, toward umap-learn's in-place walk). It trades speed for local overlap:
+
+| chunk_count | overlap@15 (n=1000) | vs default | rel. cost |
+|---:|---:|---:|---:|
+| 1 (default) | 0.234 | — | 1× |
+| 10 | 0.244 | +0.010 | ~5× |
+| 40 | 0.248 | +0.014 (≈ umap-learn) | ~10× |
+
+`umap_project(x, 2, chunk_count=10)` closes most of the gap; it stays deterministic. The
+real-data benchmark (MNIST / Fashion-MNIST at 5k/10k/20k) lands here next — roadmap #7.
 
 Metrics:
 - **overlap@k** — share of each point's k input-space neighbours still among its k nearest

@@ -5,6 +5,19 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-23
+
+### Added
+- `chunk_count` knob on `umap_project` / `optimize_layout` (roadmap #6). Default `1` keeps
+  the fast per-epoch snapshot update unchanged; higher values process each epoch's edges in
+  that many shuffled chunks so later chunks see earlier moves (partial in-epoch feedback),
+  trading speed for local overlap. Measured: overlap@15 at n=1000 rises 0.234 → 0.244
+  (chunk_count=10) → 0.248 (chunk_count=40 ≈ umap-learn), at ~5×/~10× cost; n=2000 0.139 →
+  0.147 (chunk_count=10). Stays deterministic.
+
+### Notes
+- #5 (per-edge negative-sample schedule) was measured neutral vs the flat rate and reverted.
+
 ## [0.1.0] - 2026-08-22
 
 Initial port of a working single-file numpy+scipy UMAP into a typed, tested library.
