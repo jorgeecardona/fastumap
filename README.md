@@ -60,8 +60,22 @@ in-epoch feedback, toward umap-learn's in-place walk). It trades speed for local
 | 10 | 0.244 | +0.010 | ~5× |
 | 40 | 0.248 | +0.014 (≈ umap-learn) | ~10× |
 
-`umap_project(x, 2, chunk_count=10)` closes most of the gap; it stays deterministic. The
-real-data benchmark (MNIST / Fashion-MNIST at 5k/10k/20k) lands here next — roadmap #7.
+`umap_project(x, 2, chunk_count=10)` closes most of the gap; it stays deterministic.
+
+### Real data — MNIST (`make bench`)
+
+Single-thread, 784-dim MNIST via `bench/mnist.py` (defaults, `chunk_count=1`):
+
+| n | method | wall-clock | overlap@15 ↑ | global dist corr ↑ |
+|---|---|---:|---:|---:|
+| 5000 | **fastumap** | **26 s** | 0.333 | 0.310 |
+| 5000 | umap-learn | 73 s | 0.344 | 0.329 |
+| 5000 | pca | 2 s | 0.058 | 0.523 |
+
+On real data fastumap is within **0.011** overlap of umap-learn and **~2.8× faster** at
+n=5000 (it pays no numba compile and no pynndescent). PCA keeps global distances best but
+loses local structure. 10k/20k rows run from the same script (umap-learn's single-threaded
+path is slow there); those numbers are being added.
 
 Metrics:
 - **overlap@k** — share of each point's k input-space neighbours still among its k nearest
