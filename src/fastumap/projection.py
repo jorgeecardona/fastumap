@@ -7,7 +7,7 @@ import numpy as np
 from ._types import FloatArray
 from .graph import find_ab_params, fuzzy_simplicial_set
 from .layout import optimize_layout, spectral_layout
-from .neighbors import knn_euclidean
+from .neighbors import knn
 
 
 def _default_epochs(n: int) -> int:
@@ -44,13 +44,11 @@ def umap_project(
     Deterministic given ``random_state``: the spectral start vector is pinned and the
     negative sampler is seeded, so the same input and seed give bit-identical output.
     """
-    if metric != "euclidean":
-        raise NotImplementedError(f"metric={metric!r} not supported yet; only 'euclidean'")
     x = _validate(matrix, dimensions)
     n = x.shape[0]
     k = min(n_neighbors, n)
 
-    knn_indices, knn_dists = knn_euclidean(x, k)
+    knn_indices, knn_dists = knn(x, k, metric=metric)
     graph = fuzzy_simplicial_set(knn_indices, knn_dists)
     rng = np.random.default_rng(random_state)
     init = spectral_layout(graph, dimensions, rng=rng)
@@ -74,6 +72,7 @@ def spectral_project(
     *,
     n_neighbors: int = 15,
     random_state: int = 42,
+    metric: str = "euclidean",
 ) -> FloatArray:
     """Just the spectral initialisation: kNN graph, fuzzy set, spectral embedding.
 
@@ -83,7 +82,7 @@ def spectral_project(
     x = _validate(matrix, dimensions)
     n = x.shape[0]
     k = min(n_neighbors, n)
-    knn_indices, knn_dists = knn_euclidean(x, k)
+    knn_indices, knn_dists = knn(x, k, metric=metric)
     graph = fuzzy_simplicial_set(knn_indices, knn_dists)
     rng = np.random.default_rng(random_state)
     return spectral_layout(graph, dimensions, rng=rng)

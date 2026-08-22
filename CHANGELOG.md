@@ -5,6 +5,16 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-08-23
+
+### Added
+- `metric="cosine"` on `umap_project` / `spectral_project` (roadmap #14) — the metric that
+  matters for text/CLS embeddings. Implemented as a blocked-brute-force cosine kNN
+  (`knn_cosine`): L2-normalise rows once, then the block dot product is cosine similarity,
+  distance = 1 − sim. Deterministic. A test shows it beats euclidean on directional
+  clusters (same direction, magnitudes spanning 0.1–10). `knn`/`knn_cosine` are the new
+  neighbour entry points; an unknown metric raises `ValueError`.
+
 ## [0.1.3] - 2026-08-23
 
 ### Changed

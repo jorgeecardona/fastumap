@@ -80,10 +80,15 @@ pip install fastumap        # numpy + scipy, nothing else
 ```python
 from fastumap import umap_project, spectral_project
 
-xy  = umap_project(embeddings, dimensions=2)          # (n, 2)
-xyz = umap_project(embeddings, dimensions=3)          # (n, 3)
-init = spectral_project(embeddings, dimensions=2)     # just the spectral initialisation
+xy  = umap_project(embeddings, dimensions=2)                    # (n, 2)
+xyz = umap_project(embeddings, dimensions=3)                    # (n, 3)
+cos = umap_project(embeddings, dimensions=2, metric="cosine")  # for text/CLS embeddings
+init = spectral_project(embeddings, dimensions=2)              # just the spectral init
 ```
+
+`metric` is `"euclidean"` (default) or `"cosine"`. Cosine is usually what you want for
+encoder/CLS embeddings — euclidean on unnormalised output is dominated by vector length,
+not the direction that carries the meaning.
 
 Same input and seed give **bit-identical** output across processes (the layout must be
 stable across reloads so people can compare the picture over time). `umap_project` takes
