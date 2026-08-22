@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://moonrepo.dev/schemas/project.json
+#
+# fastumap — numba-free UMAP. Single project at the repo root. Every task runs as a
+# system command via `uv run` (see .moon/toolchain.yml). CI runs one `moon run :ci`
+# (or `:release` on main); moon owns all task ordering.
+id: 'fastumap'
+layer: 'library'
+language: 'python'
+
+tasks:
+  lint:
+    command: 'uv run ruff check src tests bench'
+    inputs: ['src/**/*.py', 'tests/**/*.py', 'bench/**/*.py', 'pyproject.toml']
+
+  format-check:
+    command: 'uv run ruff format --check src tests bench'
+    inputs: ['src/**/*.py', 'tests/**/*.py', 'bench/**/*.py', 'pyproject.toml']
+
+  typecheck:
+    command: 'uv run pyright'
+    inputs: ['src/**/*.py', 'tests/**/*.py', 'bench/**/*.py', 'pyproject.toml']
+
+  test:
+    command: 'uv run pytest'
+    inputs: ['src/**/*.py', 'tests/**/*.py', 'pyproject.toml']
+
+  build:
+    command: 'uv build --out-dir dist'
+    deps: ['~:test']
+    inputs: ['src/**/*.py', 'pyproject.toml', 'README.md', 'LICENSE']
+    outputs: ['dist']
+
+  # CI-side enforcement of "a src/ change carries a version bump".
+  version-guard:
+    command: 'sh scripts/ci-version-guard'
+    options:
+      cache: false
+
+  # The single aggregate gate: the whole CI check graph in one target.
+  ci:
+    command: 'noop'
+    deps:
+      - '~:lint'
+      - '~:format-check'
+      - '~:typecheck'
+      - '~:test'
+      - '~:build'
+      - '~:version-guard'
+
+  # Mint a PyPI OIDC token and upload dist/*. Invoked by release (or by hand).
+  publish:
+    command: 'sh scripts/pypi-publish'
+    deps: ['~:build']
+    options:
+      cache: false
+      runInCI: false
+
+  # main-only: no-op if pyproject's version is already on PyPI; else publish.
+  release:
+    command: 'sh scripts/release'
+    deps: ['~:ci']
+    options:
+      cache: false

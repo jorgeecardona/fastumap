@@ -1,0 +1,32 @@
+#!/bin/sh
+# Enforce "a change to shipped Python source carries a version bump" -- the CI-side,
+# non-bypassable counterpart to the pre-commit auto-bump.
+#
+# Usage: scripts/check-version-bump <base-ref> [head-ref]   (head defaults to HEAD)
+set -e
+cd "$(dirname "$0")/.."
+
+BASE="$1"
+HEAD_REF="${2:-HEAD}"
+
+if ! command -v git >/dev/null 2>&1; then
+    echo "check-version-bump: git not found -- cannot verify; failing closed" >&2
+    exit 1
+fi
+
+if [ -z "$BASE" ]; then
+    echo "check-version-bump: no base ref given; skipping" >&2
+    exit 0
+fi
+
+if git diff --name-only "$BASE" "$HEAD_REF" -- 'src/' | grep -q '\.py$'; then
+    if git diff "$BASE" "$HEAD_REF" -- pyproject.toml | grep -qE '^[+-]version = "'; then
+        echo "check-version-bump: OK -- src python changed and version bumped"
+        exit 0
+    fi
+    echo "check-version-bump: FAIL -- src python changed but pyproject version did NOT bump." >&2
+    echo "  Fix: run 'make bump', then amend/recommit so the code change ships with a new version." >&2
+    exit 1
+fi
+
+echo "check-version-bump: OK -- no src python changes, no bump required"
