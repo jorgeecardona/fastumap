@@ -1,13 +1,22 @@
-"""Public projection entry points: ``umap_project`` and ``spectral_project``."""
+"""Public projection entry points: ``umap_project``, ``spectral_project``, and the
+``fit`` / ``transform`` pair for placing new points into an existing layout.
+"""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
-from ._types import FloatArray
-from .graph import find_ab_params, fuzzy_simplicial_set
-from .layout import optimize_layout, spectral_layout
-from .neighbors import knn
+from ._types import FloatArray, IntArray
+from .graph import (
+    compute_membership,
+    find_ab_params,
+    fuzzy_simplicial_set,
+    smooth_knn_dist,
+)
+from .layout import optimize_layout, optimize_transform, spectral_layout
+from .neighbors import knn, knn_between
 
 
 def _default_epochs(n: int) -> int:
@@ -24,6 +33,76 @@ def _validate(matrix: FloatArray, dimensions: int) -> FloatArray:
     if x.shape[0] < 2:
         raise ValueError("need at least 2 points to project")
     return x
+
+
+@dataclass(frozen=True)
+class UMAPModel:
+    """A fitted layout plus everything ``transform`` needs to place new points.
+
+    ``train`` is kept because placing a new point requires its nearest neighbours in the
+    original training data. ``embedding`` is the frozen training layout new points are
+    positioned against.
+    """
+
+    train: FloatArray
+    embedding: FloatArray
+    a: float
+    b: float
+    n_neighbors: int
+    dimensions: int
+    metric: str
+    random_state: int
+    negative_sample_rate: int
+
+
+def fit(
+    matrix: FloatArray,
+    dimensions: int = 2,
+    *,
+    n_neighbors: int = 15,
+    min_dist: float = 0.1,
+    spread: float = 1.0,
+    n_epochs: int | None = None,
+    negative_sample_rate: int = 5,
+    random_state: int = 42,
+    metric: str = "euclidean",
+    chunk_count: int = 1,
+) -> UMAPModel:
+    """Fit a UMAP layout and return a :class:`UMAPModel` (use ``.embedding`` for the coords).
+
+    Deterministic given ``random_state``. See :func:`umap_project` for the parameters.
+    """
+    x = _validate(matrix, dimensions)
+    n = x.shape[0]
+    k = min(n_neighbors, n)
+
+    knn_indices, knn_dists = knn(x, k, metric=metric)
+    graph = fuzzy_simplicial_set(knn_indices, knn_dists)
+    rng = np.random.default_rng(random_state)
+    init = spectral_layout(graph, dimensions, rng=rng)
+    a, b = find_ab_params(spread, min_dist)
+    epochs = _default_epochs(n) if n_epochs is None else n_epochs
+    embedding = optimize_layout(
+        init,
+        graph,
+        epochs,
+        a=a,
+        b=b,
+        rng=rng,
+        negative_sample_rate=negative_sample_rate,
+        chunk_count=chunk_count,
+    )
+    return UMAPModel(
+        train=x,
+        embedding=embedding,
+        a=a,
+        b=b,
+        n_neighbors=n_neighbors,
+        dimensions=dimensions,
+        metric=metric,
+        random_state=random_state,
+        negative_sample_rate=negative_sample_rate,
+    )
 
 
 def umap_project(
@@ -43,27 +122,78 @@ def umap_project(
 
     Deterministic given ``random_state``: the spectral start vector is pinned and the
     negative sampler is seeded, so the same input and seed give bit-identical output.
+    ``metric`` is ``"euclidean"`` or ``"cosine"``. ``chunk_count > 1`` enables partial
+    in-epoch feedback (higher local overlap, slower); see the README.
     """
-    x = _validate(matrix, dimensions)
-    n = x.shape[0]
-    k = min(n_neighbors, n)
-
-    knn_indices, knn_dists = knn(x, k, metric=metric)
-    graph = fuzzy_simplicial_set(knn_indices, knn_dists)
-    rng = np.random.default_rng(random_state)
-    init = spectral_layout(graph, dimensions, rng=rng)
-    a, b = find_ab_params(spread, min_dist)
-    epochs = _default_epochs(n) if n_epochs is None else n_epochs
-    return optimize_layout(
-        init,
-        graph,
-        epochs,
-        a=a,
-        b=b,
-        rng=rng,
+    return fit(
+        matrix,
+        dimensions,
+        n_neighbors=n_neighbors,
+        min_dist=min_dist,
+        spread=spread,
+        n_epochs=n_epochs,
         negative_sample_rate=negative_sample_rate,
+        random_state=random_state,
+        metric=metric,
         chunk_count=chunk_count,
+    ).embedding
+
+
+def transform(model: UMAPModel, matrix: FloatArray, *, n_epochs: int | None = None) -> FloatArray:
+    """Place new points into ``model``'s existing layout without refitting it.
+
+    New points are attracted to their nearest neighbours in the training set and repelled
+    from random training points; the training layout stays fixed, so the picture is stable
+    across calls. Deterministic given the model and input. Returns ``(n_new, dimensions)``.
+    """
+    new_x = _validate(matrix, model.dimensions)
+    if new_x.shape[1] != model.train.shape[1]:
+        raise ValueError(
+            f"new points have {new_x.shape[1]} features, model was fit on {model.train.shape[1]}"
+        )
+    n_new = new_x.shape[0]
+    n_train = model.train.shape[0]
+    k = min(model.n_neighbors, n_train)
+
+    knn_indices, knn_dists = knn_between(new_x, model.train, k, metric=model.metric)
+    sigma, rho = smooth_knn_dist(knn_dists, k)
+    # exclude_self=False: query and reference are different sets, so index equality between
+    # a new point and a training neighbour is a coincidence, not a self-edge to drop.
+    rows, cols, data = compute_membership(knn_indices, knn_dists, sigma, rho, exclude_self=False)
+
+    init = _weighted_average_init(rows, cols, data, model.embedding, n_new, model.dimensions)
+    epochs = max(30, _default_epochs(n_train) // 3) if n_epochs is None else n_epochs
+    rng = np.random.default_rng(model.random_state)
+    return optimize_transform(
+        init,
+        model.embedding,
+        rows,
+        cols,
+        data,
+        epochs,
+        a=model.a,
+        b=model.b,
+        rng=rng,
+        negative_sample_rate=model.negative_sample_rate,
     )
+
+
+def _weighted_average_init(
+    rows: IntArray,
+    cols: IntArray,
+    data: FloatArray,
+    train_embedding: FloatArray,
+    n_new: int,
+    dim: int,
+) -> FloatArray:
+    """Seed each new point at the membership-weighted mean of its neighbours' positions."""
+    init = np.zeros((n_new, dim), dtype=np.float64)
+    for d in range(dim):
+        init[:, d] = np.bincount(rows, weights=data * train_embedding[cols, d], minlength=n_new)
+    weight_sum = np.bincount(rows, weights=data, minlength=n_new)
+    nonzero = weight_sum > 0.0
+    init[nonzero] /= weight_sum[nonzero, None]
+    return init
 
 
 def spectral_project(

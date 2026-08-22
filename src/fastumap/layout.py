@@ -200,3 +200,78 @@ def optimize_layout(
         epoch_of_next[due] += epochs_per_sample[due]
 
     return emb
+
+
+def optimize_transform(
+    new_embedding: FloatArray,
+    fixed_embedding: FloatArray,
+    head: IntArray,
+    tail: IntArray,
+    weight: FloatArray,
+    n_epochs: int,
+    *,
+    a: float,
+    b: float,
+    rng: np.random.Generator,
+    negative_sample_rate: int = 5,
+    gamma: float = 1.0,
+    initial_alpha: float = 1.0,
+) -> FloatArray:
+    """Place new points into a fixed layout: only ``new_embedding`` moves.
+
+    Edges run from new points (``head`` indexes ``new_embedding``) to their training
+    neighbours (``tail`` indexes the frozen ``fixed_embedding``). Attraction pulls each
+    new point toward its neighbours; repulsion pushes it from ``negative_sample_rate``
+    random training points. The training layout never moves, so the picture stays stable.
+    """
+    epochs_per_sample = make_epochs_per_sample(weight, n_epochs)
+    epoch_of_next = epochs_per_sample.copy()
+    emb = np.ascontiguousarray(new_embedding, dtype=np.float64)
+    ref = fixed_embedding
+    n_ref = ref.shape[0]
+
+    for epoch in range(n_epochs):
+        alpha = initial_alpha * (1.0 - epoch / n_epochs)
+        due: IntArray = np.where((epoch_of_next <= epoch) & (epochs_per_sample > 0.0))[0]
+        if due.shape[0] == 0:
+            continue
+
+        h = head[due]
+        t = tail[due]
+        delta = np.zeros_like(emb)
+
+        diff = emb[h] - ref[t]
+        d2: FloatArray = np.einsum("ij,ij->i", diff, diff)
+        attract_coeff = np.zeros_like(d2)
+        nonzero = d2 > 0.0
+        d2_nz = d2[nonzero]
+        attract_coeff[nonzero] = (-2.0 * a * b * np.power(d2_nz, b - 1.0)) / (
+            1.0 + a * np.power(d2_nz, b)
+        )
+        grad = np.clip(attract_coeff[:, None] * diff, -_GRAD_CLIP, _GRAD_CLIP) * alpha
+        _scatter_add(delta, h, grad)  # only the new points move; ref is frozen
+
+        for _sample in range(negative_sample_rate):
+            k_samp: IntArray = rng.integers(0, n_ref, size=due.shape[0])
+            diff_n = emb[h] - ref[k_samp]
+            d2n: FloatArray = np.einsum("ij,ij->i", diff_n, diff_n)
+            repel_coeff = np.zeros_like(d2n)
+            positive = d2n > 0.0
+            d2p = d2n[positive]
+            repel_coeff[positive] = (2.0 * gamma * b) / (
+                (0.001 + d2p) * (1.0 + a * np.power(d2p, b))
+            )
+            grad_n = (
+                np.where(
+                    positive[:, None],
+                    np.clip(repel_coeff[:, None] * diff_n, -_GRAD_CLIP, _GRAD_CLIP),
+                    _GRAD_CLIP,
+                )
+                * alpha
+            )
+            _scatter_add(delta, h, grad_n)
+
+        emb = emb + delta
+        epoch_of_next[due] += epochs_per_sample[due]
+
+    return emb

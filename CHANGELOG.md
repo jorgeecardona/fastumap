@@ -5,6 +5,18 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-08-23
+
+### Added
+- `fit()` → `UMAPModel` and `transform(model, new)` (roadmap #13): place new points into an
+  existing layout without refitting — what makes a drift view incremental instead of a full
+  recompute per request. New points get their neighbours in the training set (`knn_between`),
+  a membership-weighted-average seed, then a fixed-tail optimiser (`optimize_transform`) that
+  moves only the new points while the training layout stays frozen. Deterministic, does not
+  mutate the base layout, and lands new points near same-cluster training points (>0.8 in
+  the test). `umap_project` is now `fit(...).embedding`. `compute_membership` gains
+  `exclude_self` (off for transform, where neighbours come from a different set).
+
 ## [0.1.4] - 2026-08-23
 
 ### Added

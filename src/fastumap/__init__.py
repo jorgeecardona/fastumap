@@ -15,21 +15,24 @@ from typing import TYPE_CHECKING
 
 __version__ = "0.1.0"
 __all__ = [
+    "UMAPModel",
     "__version__",
+    "fit",
     "global_distance_correlation",
     "neighbor_overlap",
     "random_layout",
     "spectral_project",
+    "transform",
     "umap_project",
 ]
 
 if TYPE_CHECKING:
     from .metrics import global_distance_correlation, neighbor_overlap, random_layout
-    from .projection import spectral_project, umap_project
+    from .projection import UMAPModel, fit, spectral_project, transform, umap_project
 
 
 def __getattr__(name: str) -> object:
-    if name in ("umap_project", "spectral_project"):
+    if name in ("umap_project", "spectral_project", "fit", "transform", "UMAPModel"):
         from . import projection
 
         return getattr(projection, name)

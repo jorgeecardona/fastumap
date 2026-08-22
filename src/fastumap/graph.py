@@ -98,11 +98,15 @@ def compute_membership(
     knn_dists: FloatArray,
     sigma: FloatArray,
     rho: FloatArray,
+    *,
+    exclude_self: bool = True,
 ) -> tuple[IntArray, IntArray, FloatArray]:
     """Directed edge weights ``exp(-(d - rho)/sigma)``, clamped to 1 when d <= rho.
 
-    Returns COO arrays ``(rows, cols, data)``. Self-edges (where a point is its own
-    neighbour) are set to weight 0, matching umap-learn.
+    Returns COO arrays ``(rows, cols, data)``. With ``exclude_self`` (self-kNN), edges
+    where a point is its own neighbour are set to weight 0, matching umap-learn. For
+    ``transform`` the neighbours come from a *different* set (the training data), so index
+    equality is coincidental and ``exclude_self=False`` keeps those edges.
     """
     n, k = knn_indices.shape
     offset = knn_dists - rho[:, None]
@@ -115,7 +119,8 @@ def compute_membership(
     rows = np.repeat(np.arange(n, dtype=np.int64), k)
     cols = knn_indices.reshape(-1).astype(np.int64)
     data = vals.reshape(-1).astype(np.float64)
-    data[rows == cols] = 0.0
+    if exclude_self:
+        data[rows == cols] = 0.0
     return rows, cols, data
 
 

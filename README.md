@@ -90,6 +90,16 @@ init = spectral_project(embeddings, dimensions=2)              # just the spectr
 encoder/CLS embeddings — euclidean on unnormalised output is dominated by vector length,
 not the direction that carries the meaning.
 
+**Incremental placement.** Fit once, then place new points into the frozen layout without
+refitting — so a drift view stays stable instead of reshuffling every request:
+
+```python
+from fastumap import fit, transform
+
+model = fit(window, dimensions=2)      # UMAPModel; model.embedding is the layout
+new_xy = transform(model, new_points)  # (n_new, 2), placed against the fixed layout
+```
+
 Same input and seed give **bit-identical** output across processes (the layout must be
 stable across reloads so people can compare the picture over time). `umap_project` takes
 `n_neighbors`, `min_dist`, `spread`, `n_epochs`, `negative_sample_rate`, `random_state`.
