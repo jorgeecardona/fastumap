@@ -68,14 +68,23 @@ Single-thread, 784-dim MNIST via `bench/mnist.py` (defaults, `chunk_count=1`):
 
 | n | method | wall-clock | overlap@15 ↑ | global dist corr ↑ |
 |---|---|---:|---:|---:|
-| 5000 | **fastumap** | **26 s** | 0.333 | 0.310 |
+| 5000 | **fastumap** | 26 s | 0.333 | 0.310 |
 | 5000 | umap-learn | 73 s | 0.344 | 0.329 |
 | 5000 | pca | 2 s | 0.058 | 0.523 |
+| 10000 | **fastumap** | 72 s | 0.267 | 0.279 |
+| 10000 | umap-learn | 83 s | 0.274 | 0.286 |
+| 10000 | pca | 4 s | 0.039 | 0.471 |
+| 20000 | fastumap | 110 s | 0.188 | 0.323 |
+| 20000 | umap-learn | 31 s | 0.205 | 0.316 |
+| 20000 | pca | 10 s | 0.024 | 0.497 |
 
-On real data fastumap is within **0.011** overlap of umap-learn and **~2.8× faster** at
-n=5000 (it pays no numba compile and no pynndescent). PCA keeps global distances best but
-loses local structure. 10k/20k rows run from the same script (umap-learn's single-threaded
-path is slow there); those numbers are being added.
+fastumap stays within **0.01–0.02** overlap of umap-learn at every size, and beats PCA on
+local structure by a wide margin (PCA keeps global distances best, as a linear method does).
+On speed it wins at 5k and 10k. Two honest caveats: (1) wall-clock is measured in one
+process, so umap-learn's later fits reuse the numba compile paid on the first — its 20k time
+excludes the ~20 s compile a *fresh* process pays every time, which is the cost fastumap
+exists to avoid; (2) at 20k fastumap's brute-force O(n²) kNN and Python-loop SGD lose to
+pynndescent — the case the approximate-kNN backend (roadmap #15) addresses.
 
 Metrics:
 - **overlap@k** — share of each point's k input-space neighbours still among its k nearest
