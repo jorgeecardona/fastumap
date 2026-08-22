@@ -32,10 +32,9 @@ fastumap imports in ~12 ms, four times over, and leaves the health-check budget 
 
 ## Quality vs umap-learn
 
-Graded on separated Gaussian clusters (1024-dim unless noted), five seeds, against
-umap-learn on the same data. We assert we are *within a tolerance* of the reference, never
-that layouts match: different initialisation and update order rotate and reflect
-equally-good embeddings.
+Graded on separated Gaussian clusters (dimensions noted per table), against umap-learn on
+the same data. We assert we are *within a tolerance* of the reference, never that layouts
+match: different initialisation and update order rotate and reflect equally-good embeddings.
 
 <!-- QUALITY_TABLE -->
 **n=1000, 64-dim, 8 clusters, 3 seeds** (`make grade`):
@@ -102,7 +101,8 @@ new_xy = transform(model, new_points)  # (n_new, 2), placed against the fixed la
 
 Same input and seed give **bit-identical** output across processes (the layout must be
 stable across reloads so people can compare the picture over time). `umap_project` takes
-`n_neighbors`, `min_dist`, `spread`, `n_epochs`, `negative_sample_rate`, `random_state`.
+`n_neighbors`, `min_dist`, `spread`, `n_epochs`, `negative_sample_rate`, `random_state`,
+`metric`, and `chunk_count`.
 
 ## Sparse input
 
@@ -122,10 +122,10 @@ shows up.
 - **Memory bounded** — the n-by-n distance matrix is never materialised (512-row blocked
   kNN). At the worst case (5000 × 1024) the fit adds ~102 MB over the import+input baseline
   (175 MB total peak); the test enforces a 200 MB ceiling.
-- **Time budgeted** — single-thread wall-clock ~7.7 s at 1000 × 1024, ~39.5 s at
-  5000 × 1024; a CI test measures under a single-core cap and fails on a regression past a
-  generous ceiling (25 s / 120 s). The SGD scatter dominates — the number is honest, not
-  yet fast; speeding it up is tracked.
+- **Time budgeted** — single-thread wall-clock ~5.3 s at 1000 × 1024, ~32 s at 5000 × 1024;
+  a CI test measures under a single-core cap and fails on a regression past a generous
+  ceiling (25 s / 120 s). The SGD dominates — the number is honest, not yet fast; speeding
+  it up further is tracked.
 - **2-D and 3-D**, both first-class. **Typed**, pyright strict.
 
 ## Releasing
