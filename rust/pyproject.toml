@@ -1,0 +1,24 @@
+# Build config for the optional native accelerator. Kept separate from the main
+# (pure-Python, hatchling) fastumap package so `pip install fastumap` stays pure and
+# portable; this builds `fastumap_accel` with maturin, which fastumap imports if present.
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "fastumap-accel"
+version = "0.1.0"
+description = "Native SGD kernel for fastumap (optional accelerator)."
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Jorge Cardona", email = "jorgeecardona@gmail.com" }]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
+
+[tool.maturin]
+module-name = "fastumap_accel"
+manifest-path = "Cargo.toml"
+strip = true

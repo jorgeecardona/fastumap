@@ -32,6 +32,9 @@ logs/
 # Cached benchmark datasets (MNIST etc.)
 /bench/data/
 
+# Rust accelerator build artifacts
+/rust/target/
+
 # Local agent wiring: names the cabildo issues MCP, not a package dependency.
 # docs/issues/ IS tracked — the register is plain markdown.
 .mcp.json
