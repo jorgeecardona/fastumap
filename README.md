@@ -142,9 +142,31 @@ model = fit(window, dimensions=2)     # once per window; cache the UMAPModel
 xy = transform(model, new_points)     # per request — cheap, and stable across requests
 ```
 
-A `transform` layout is an approximation of a full refit of the same window: new points are
-placed against the frozen training embedding, so the picture stays put across requests
-(a full refit would rotate/reflect the whole thing). Refit when the window itself shifts.
+**Is a transform comparable to a refit?** A `transform` layout is an approximation of a
+full refit of the same window: new points are placed against the frozen training embedding,
+so the picture stays put across requests (a full refit would rotate/reflect the whole
+thing). It preserves each new point's neighbourhood well when the new points resemble the
+training distribution; it does not re-discover global structure. Refit when the window
+itself shifts.
+
+**When does a cached model go stale?** Watch the distance from new points to their nearest
+training neighbour. When the batch mean of that distance drifts well above the training
+set's own mean nearest-neighbour distance (say 2–3×), or a rising share of new points have
+every neighbour far from any training point, the transform is extrapolating and it is time
+to refit. A timer is a weak proxy; this distance signal reacts to the actual drift, and both
+quantities are cheap to compute from the kNN you already run.
+
+**Persisting a model.** `UMAPModel` is a plain frozen dataclass of numpy arrays, so it
+pickles: fit once, `pickle.dumps(model)`, and every worker — or a worker after restart —
+can `pickle.loads` it instead of refitting. Picklability is a supported contract (a test
+pins it). The footprint is dominated by `train`, which the model keeps for the transform
+kNN: roughly `n_train × n_features × 8` bytes, about **40 MB** for a 5000 × 1024 model,
+times the number of cached copies. (Storing `train` as float32 would halve that; tracked.)
+
+**Rolling window — out of scope.** "Add these points, drop those older than X" is not a
+supported operation: dropping training points would require rebuilding the graph, i.e. a
+refit. Use `fit`/`transform` for the append-only case (new points against a fixed window),
+and refit when the window slides.
 
 ## Sparse input
 
