@@ -86,6 +86,19 @@ excludes the ~20 s compile a *fresh* process pays every time, which is the cost 
 exists to avoid; (2) at 20k fastumap's brute-force O(n²) kNN and Python-loop SGD lose to
 pynndescent — the case the approximate-kNN backend (roadmap #15) addresses.
 
+### The per-call trade at 1024 dimensions
+
+At the production shape — 1024-dim, n=5000 — fastumap is roughly **2× slower per call** than
+umap-learn, measured inside a 0.5-vCPU container (umap-learn ~22 s vs fastumap ~38–53 s).
+That is inherent, not a missing optimisation: the **layout SGD dominates** wall-clock, and a
+pure-numpy vectorised SGD cannot match umap-learn's numba-compiled in-place optimiser
+(`pca_dim` trims only the kNN share, ~9%; the O(n²) part is roadmap #15).
+
+It does not undo the reason to use this. fastumap boots the container in **~10 s vs ~148 s**
+for the numba stack (four workers on half a vCPU), so it is the right choice when cold-start
+/ import cost dominates — a Fargate/Lambda service that would otherwise crash-loop on boot —
+and a poorer one when per-call latency on large high-dimensional batches is the bottleneck.
+
 Metrics:
 - **overlap@k** — share of each point's k input-space neighbours still among its k nearest
   after projection. Chance is ~`k/(n-1)`; always read against the random control.
