@@ -89,6 +89,23 @@ accel:
     paths:
       - dist-accel
 
+# Run a fast, version-sensitive subset on Python 3.11 / 3.12 / 3.13 (uv provisions each
+# interpreter, tox-uv drives it) so version-specific breakage is caught. Kept to a subset
+# because the full suite 3x would overwhelm the memory-limited runner; `make tox` locally
+# runs everything. allow_failure until it is proven stable on the runner.
+test-matrix:
+  image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+  needs: []
+  allow_failure: true
+  variables:
+    UV_LINK_MODE: copy
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends git libatomic1
+    - uv python install 3.11 3.12 3.13
+    - uv sync --frozen
+  script:
+    - uv run tox -- tests/test_projection.py tests/test_find_ab_params.py tests/test_no_heavy_deps.py tests/test_version.py tests/test_import_cost.py
+
 # Publish the docs to GitLab Pages. main only; independent of `ci`.
 pages:
   image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
