@@ -5,6 +5,18 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-08-23
+
+### Added
+- Optional native accelerator wiring. If `fastumap-accel` (a Rust reimplementation of the
+  SGD, `rust/`) is importable, `optimize_layout` uses it for the default `chunk_count<=1`
+  path; otherwise the pure-numpy path runs unchanged. The base install stays numpy+scipy —
+  the accelerator is opt-in (`pip install fastumap-accel`). It does umap-learn's true
+  in-place walk, so it is **faster and higher quality**: measured ~1.7–1.9× vs the numpy SGD
+  with better overlap (0.244 vs 0.233 at n=1000). Deterministic; a stub-less compiled module
+  so it is imported dynamically. `tests/test_accel.py` covers the fast path (skipped when
+  absent). The accel wheel is abi3 (`cp311-abi3`), one build for Python 3.11 and later.
+
 ## [0.1.9] - 2026-08-23
 
 ### Changed

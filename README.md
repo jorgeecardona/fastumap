@@ -110,6 +110,12 @@ Metrics:
 pip install fastumap        # numpy + scipy, nothing else
 ```
 
+**Optional native speedup.** A Rust reimplementation of the SGD lives in [`rust/`](rust/)
+(built with maturin). When it's installed, fastumap auto-detects and uses it — measured
+**~1.7–1.9× faster with better overlap**, deterministic, one abi3 wheel for Python 3.11 and
+later. It's opt-in; the base install stays pure numpy+scipy and is the fallback. (PyPI wheels
+for the accelerator are on the roadmap; for now `maturin develop --release -m rust/Cargo.toml`.)
+
 ## Use
 
 ```python

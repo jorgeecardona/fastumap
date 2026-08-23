@@ -7,11 +7,22 @@ runs the attract/repel SGD that UMAP's cross-entropy objective reduces to.
 
 from __future__ import annotations
 
+import importlib
+
 import numpy as np
 
 from . import _scipy
 from ._types import FloatArray, IntArray
 from .graph import FuzzyGraph, make_epochs_per_sample
+
+try:
+    # Optional native accelerator (`pip install fastumap-accel`): a Rust reimplementation
+    # of the SGD that does umap-learn's true in-place walk — faster and higher quality.
+    # Absent by default; the pure-numpy path below is the fallback. Imported dynamically so
+    # the type checker doesn't resolve a compiled, stub-less module that may not be present.
+    _accel_optimize = importlib.import_module("fastumap_accel").optimize_layout
+except ImportError:
+    _accel_optimize = None
 
 _GRID_SPACING = 3.0
 _SCALE = 10.0
@@ -138,6 +149,26 @@ def optimize_layout(
     head = graph.head
     tail = graph.tail
     epochs_per_sample = make_epochs_per_sample(graph.weight, n_epochs)
+
+    # Native fast path: the Rust kernel does the true in-place walk (chunk_count>1's
+    # in-epoch feedback is a numpy-only approximation, so only take it for the default).
+    if _accel_optimize is not None and chunk_count <= 1:
+        seed = int(rng.integers(0, 2**63 - 1))
+        result = _accel_optimize(
+            np.ascontiguousarray(embedding, dtype=np.float64),
+            head,
+            tail,
+            epochs_per_sample,
+            n_epochs,
+            a,
+            b,
+            gamma,
+            negative_sample_rate,
+            initial_alpha,
+            seed,
+        )
+        return np.ascontiguousarray(result, dtype=np.float64)
+
     epoch_of_next = epochs_per_sample.copy()
     emb = np.ascontiguousarray(embedding, dtype=np.float64)
     n_vertices = emb.shape[0]
