@@ -154,9 +154,9 @@ shows up.
 ## Releasing
 
 CI (GitLab, moon + uv + proto) runs lint, format, typecheck, tests, build on every push.
-On `main`, once the PyPI Trusted Publisher is configured and CI/CD variable `PYPI_READY=1`
-is set, it publishes to PyPI via **OIDC Trusted Publishing** (no stored token) whenever the
-version in `pyproject.toml` is not yet on PyPI.
+On `main` it runs `:release`: the same checks, then publishes to PyPI via **OIDC Trusted
+Publishing** (no stored token, pending publisher configured) whenever the version in
+`pyproject.toml` is not yet on PyPI — idempotent, so it is a no-op on every other pipeline.
 
 ## Not affiliated with UMAP
 

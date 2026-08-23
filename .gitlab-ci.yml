@@ -3,10 +3,10 @@
 # proto installs the pinned toolchain (.prototools: moon + uv); then ONE `moon run`
 # orchestrates the whole task graph (lint, format, typecheck, test, build, version-guard)
 # -- no per-language jobs, moon resolves the order. On the default branch it runs
-# `:release` (the same `:ci` checks as deps, then publishes to PyPI via OIDC Trusted
-# Publishing when the version isn't on PyPI yet) -- BUT only once the PyPI publisher is
-# configured and the CI/CD variable PYPI_READY=1 is set. Until then main runs `:ci`,
-# so the first pipelines are green without a PyPI account. See README "Releasing".
+# `:release`: the same `:ci` checks run as deps, then it publishes to PyPI via OIDC Trusted
+# Publishing when pyproject's version isn't on PyPI yet (idempotent -- a no-op otherwise,
+# so it is safe on every main pipeline). The PyPI pending publisher is configured. See
+# README "Releasing".
 
 default:
   image: debian:bookworm-slim
@@ -50,9 +50,10 @@ ci:
     - uv sync --frozen                    # ruff + pyright + pytest + test deps
   script:
     - export PATH="$HOME/.proto/bin:$HOME/.proto/shims:$PATH"
-    # main + PYPI_READY=1 -> full release (checks then publish-if-new). Otherwise checks only.
+    # On main: `:release` runs the full `:ci` graph then publishes if the version is new.
+    # Elsewhere (MRs/branches): checks only.
     - |
-      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] && [ "${PYPI_READY:-0}" = "1" ]; then
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
         moon run :release -c 1
       else
         moon run :ci -c 1
