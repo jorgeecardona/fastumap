@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-__version__ = "0.1.0"
 __all__ = [
     "UMAPModel",
     "__version__",
@@ -27,11 +26,23 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
+    # pyproject is the single source of truth for the version (like musil); __version__ is
+    # derived from the installed distribution metadata at first access, so it can never
+    # drift from what was published. Declared here for type checkers.
+    __version__: str
+
     from .metrics import global_distance_correlation, neighbor_overlap, random_layout
     from .projection import UMAPModel, fit, spectral_project, transform, umap_project
 
 
 def __getattr__(name: str) -> object:
+    if name == "__version__":
+        from importlib.metadata import PackageNotFoundError, version
+
+        try:
+            return version("fastumap")
+        except PackageNotFoundError:  # not installed as a distribution (rare, e.g. raw src)
+            return "0+unknown"
     if name in ("umap_project", "spectral_project", "fit", "transform", "UMAPModel"):
         from . import projection
 

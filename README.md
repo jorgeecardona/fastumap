@@ -127,6 +127,25 @@ stable across reloads so people can compare the picture over time). `umap_projec
 `n_neighbors`, `min_dist`, `spread`, `n_epochs`, `negative_sample_rate`, `random_state`,
 `metric`, and `chunk_count`.
 
+## Using this in a server
+
+fastumap is safe to call from a worker thread of an async server (`asyncio.to_thread`):
+arguments in, array out, a fresh seeded RNG per call, no module-level mutable state. Two
+projections running concurrently in different threads each produce their single-threaded
+result — pinned by a test — so `await asyncio.to_thread(umap_project, matrix, 2)` is fine.
+
+For a long-lived server, don't recompute the whole layout every request. Fit once per
+window, cache the model, and place newly-arrived points with `transform`:
+
+```python
+model = fit(window, dimensions=2)     # once per window; cache the UMAPModel
+xy = transform(model, new_points)     # per request — cheap, and stable across requests
+```
+
+A `transform` layout is an approximation of a full refit of the same window: new points are
+placed against the frozen training embedding, so the picture stays put across requests
+(a full refit would rotate/reflect the whole thing). Refit when the window itself shifts.
+
 ## Sparse input
 
 Not supported — `umap_project`/`fit` take a **dense** numpy array. The blocked kNN relies
@@ -142,6 +161,9 @@ shows up.
 - **Import under 200 ms** — a subprocess test measures it.
 - **Deterministic** — pinned ARPACK start vector, seeded negative sampler; identical bytes
   across processes.
+- **Thread-safe** — no module-level mutable state, a fresh RNG per call; concurrent
+  projections in different threads each match their single-threaded result (a test pins it),
+  so it is safe to call from `asyncio.to_thread`.
 - **Memory bounded** — the n-by-n distance matrix is never materialised (512-row blocked
   kNN). At the worst case (5000 × 1024) the fit adds ~102 MB over the import+input baseline
   (175 MB total peak); the test enforces a 200 MB ceiling.

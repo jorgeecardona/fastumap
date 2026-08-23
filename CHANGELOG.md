@@ -5,6 +5,19 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-08-23
+
+### Fixed
+- `fastumap.__version__` now derives from the installed distribution metadata
+  (`importlib.metadata`) instead of a hardcoded string, so it can no longer drift from the
+  published version (GitLab #1 — 0.1.6 reported `0.1.0`). pyproject stays the single source
+  of truth (like musil); a test asserts `__version__` == metadata == pyproject.
+
+### Added
+- README "Using this in a server" section and a thread-safety guarantee bullet (GitLab #3):
+  safe to call from `asyncio.to_thread`, and the fit-once / `transform`-per-request pattern
+  for a long-lived server.
+
 ## [0.1.6] - 2026-08-23
 
 ### Changed
