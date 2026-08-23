@@ -217,6 +217,19 @@ shows up.
   it up further is tracked.
 - **2-D and 3-D**, both first-class. **Typed**, pyright strict.
 
+## Testing
+
+```bash
+make check     # lint + typecheck + tests, one Python (mirrors CI's gate)
+make tox       # the suite across Python 3.11 / 3.12 / 3.13 (uv provisions each)
+make fargate   # import + fit timing under a Fargate-like cap: docker --cpus=0.5 --memory=2g
+```
+
+`make fargate` reproduces the production constraint — `--cpus` is a CFS quota (throttles
+total CPU-time, like Fargate's cgroup), so the import cost and per-call time it prints mean
+what they will on 0.5 vCPU. `CPUS=1 MEM=3g make fargate` (via `bench/fargate.sh`) tries other
+shapes, e.g. a Lambda size.
+
 ## Releasing
 
 CI (GitLab, moon + uv + proto) runs lint, format, typecheck, tests, build on every push.

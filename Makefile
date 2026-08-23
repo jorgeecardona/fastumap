@@ -1,4 +1,4 @@
-.PHONY: sync lint format typecheck test check build grade bench install-hooks
+.PHONY: sync lint format typecheck test check build grade bench tox fargate install-hooks
 
 sync:
 	uv sync
@@ -27,6 +27,14 @@ grade:
 
 bench:
 	uv run python bench/mnist.py
+
+# Run the suite across Python 3.11/3.12/3.13 (uv provisions each interpreter).
+tox:
+	uv run tox
+
+# Run under a Fargate-like CPU/memory cap (needs Docker): import + fit timing on 0.5 vCPU.
+fargate:
+	sh bench/fargate.sh
 
 bump:
 	sh scripts/bump-version $(TYPE)
