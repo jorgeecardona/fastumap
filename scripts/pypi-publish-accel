@@ -1,0 +1,41 @@
+#!/bin/sh
+# Publish the fastumap-accel wheels in dist-accel/ to PyPI via GitLab OIDC Trusted
+# Publishing (no stored token). Same mint-token dance as scripts/pypi-publish, but uploads
+# the native accelerator's abi3 wheels (x86_64 + aarch64). Idempotent: skips if this version
+# is already on PyPI, so it is safe on every main pipeline.
+#
+# Needs: PYPI_ID_TOKEN (from the job's id_tokens block) and a `fastumap-accel` pending
+# publisher on PyPI pointing at this GitLab project / .gitlab-ci.yml / pypi environment.
+set -e
+cd "$(CDPATH= cd "$(dirname "$0")/.." && pwd)"
+
+if [ -z "${PYPI_ID_TOKEN:-}" ]; then
+    echo "pypi-publish-accel: PYPI_ID_TOKEN not set (needs GitLab id_tokens)" >&2
+    exit 1
+fi
+
+V="$(grep -E '^version = "' rust/pyproject.toml | head -1 | cut -d'"' -f2)"
+[ -n "$V" ] || { echo "pypi-publish-accel: no version in rust/pyproject.toml" >&2; exit 1; }
+
+if uv run python - "$V" <<'PY'
+import json, sys, urllib.request
+version = sys.argv[1]
+try:
+    data = json.load(urllib.request.urlopen("https://pypi.org/pypi/fastumap-accel/json"))
+    sys.exit(0 if version in data["releases"] else 1)
+except Exception:
+    sys.exit(1)
+PY
+then
+    echo "pypi-publish-accel: fastumap-accel $V already on PyPI -- nothing to do"
+    exit 0
+fi
+
+pypi_token="$(uv run python -c 'import json, os, urllib.request;
+req = urllib.request.Request("https://pypi.org/_/oidc/mint-token",
+data=json.dumps({"token": os.environ["PYPI_ID_TOKEN"]}).encode(),
+headers={"Content-Type": "application/json"});
+print(json.load(urllib.request.urlopen(req))["token"])')"
+
+echo "pypi-publish-accel: publishing fastumap-accel $V"
+uv publish --token "$pypi_token" dist-accel/*
