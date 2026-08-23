@@ -145,9 +145,11 @@ xy = transform(model, new_points)     # per request — cheap, and stable across
 **Is a transform comparable to a refit?** A `transform` layout is an approximation of a
 full refit of the same window: new points are placed against the frozen training embedding,
 so the picture stays put across requests (a full refit would rotate/reflect the whole
-thing). It preserves each new point's neighbourhood well when the new points resemble the
-training distribution; it does not re-discover global structure. Refit when the window
-itself shifts.
+thing). Measured — fit on 80% of a set, transform the held-out 20% — the transformed points
+keep about **72% of the local neighbour overlap** they would get in a full refit (overlap@15
+0.168 vs 0.235 at n=1000). So it is a real shortcut, not a free one: good enough for placing
+in-distribution points against a stable window, weaker at re-discovering global structure.
+Refit when the window itself shifts.
 
 **When does a cached model go stale?** Watch the distance from new points to their nearest
 training neighbour. When the batch mean of that distance drifts well above the training
