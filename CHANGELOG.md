@@ -5,6 +5,20 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-08-23
+
+### Added
+- `pca_dim` on `umap_project` / `fit` / `spectral_project` (default `None` = off): pre-reduce
+  the input to that many principal components (exact SVD) before the kNN. The kNN cost grows
+  with the feature dimension, so for wide inputs (1024-dim embeddings) `pca_dim=100` shrinks
+  the dominant cost; embeddings are low-rank, so overlap is preserved (within ~0.01 in tests,
+  e.g. 0.559 → 0.547 reducing 64→16 dims). `UMAPModel` stores the PCA basis so `transform`
+  projects new points the same way. Deterministic; the off path is byte-identical to before.
+
+### Notes
+- This release also carries the `fit`/`transform` server-usage docs (GitLab #3/#4) onto the
+  PyPI project page, which the 0.1.7 release predated.
+
 ## [0.1.7] - 2026-08-23
 
 ### Fixed

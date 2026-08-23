@@ -44,13 +44,29 @@ def _validate(matrix: FloatArray, dimensions: int) -> FloatArray:
     return x
 
 
+def _pca_reduce(x: FloatArray, pca_dim: int) -> tuple[FloatArray, FloatArray, FloatArray]:
+    """Reduce ``x`` to ``pca_dim`` principal components (deterministic, exact SVD).
+
+    The kNN cost is O(n^2 * d); at 1024-d that d dominates. Projecting onto the top
+    ~100 components first shrinks it ~10x with little quality loss, because encoder/CLS
+    embeddings live on a low-rank subspace. Returns ``(reduced, mean, components)`` so
+    ``transform`` can project new points the same way.
+    """
+    mean = np.ascontiguousarray(x.mean(axis=0))
+    centered = x - mean
+    _u, _s, vt = np.linalg.svd(centered, full_matrices=False)
+    components = np.ascontiguousarray(vt[:pca_dim])  # (pca_dim, n_features)
+    reduced = np.ascontiguousarray(centered @ components.T, dtype=np.float64)
+    return reduced, mean, components
+
+
 @dataclass(frozen=True)
 class UMAPModel:
     """A fitted layout plus everything ``transform`` needs to place new points.
 
     ``train`` is kept because placing a new point requires its nearest neighbours in the
-    original training data. ``embedding`` is the frozen training layout new points are
-    positioned against.
+    training data (in the same space the fit used — the PCA-reduced space when ``pca_dim``
+    was set). ``embedding`` is the frozen training layout new points are positioned against.
     """
 
     train: FloatArray
@@ -62,6 +78,9 @@ class UMAPModel:
     metric: str
     random_state: int
     negative_sample_rate: int
+    n_features: int
+    pca_mean: FloatArray | None = None
+    pca_components: FloatArray | None = None
 
 
 def fit(
@@ -76,16 +95,25 @@ def fit(
     random_state: int = 42,
     metric: str = "euclidean",
     chunk_count: int = 1,
+    pca_dim: int | None = None,
 ) -> UMAPModel:
     """Fit a UMAP layout and return a :class:`UMAPModel` (use ``.embedding`` for the coords).
 
     Deterministic given ``random_state``. See :func:`umap_project` for the parameters.
+    ``pca_dim`` (default ``None`` = off) pre-reduces the input to that many principal
+    components before the kNN, which speeds up high-dimensional inputs; ``transform``
+    projects new points through the same basis.
     """
     x = _validate(matrix, dimensions)
-    n = x.shape[0]
+    n, n_features = x.shape
+    pca_mean: FloatArray | None = None
+    pca_components: FloatArray | None = None
+    work = x
+    if pca_dim is not None and n_features > pca_dim:
+        work, pca_mean, pca_components = _pca_reduce(x, pca_dim)
     k = min(n_neighbors, n)
 
-    knn_indices, knn_dists = knn(x, k, metric=metric)
+    knn_indices, knn_dists = knn(work, k, metric=metric)
     graph = fuzzy_simplicial_set(knn_indices, knn_dists)
     rng = np.random.default_rng(random_state)
     init = spectral_layout(graph, dimensions, rng=rng)
@@ -102,7 +130,7 @@ def fit(
         chunk_count=chunk_count,
     )
     return UMAPModel(
-        train=x,
+        train=work,
         embedding=embedding,
         a=a,
         b=b,
@@ -111,6 +139,9 @@ def fit(
         metric=metric,
         random_state=random_state,
         negative_sample_rate=negative_sample_rate,
+        n_features=n_features,
+        pca_mean=pca_mean,
+        pca_components=pca_components,
     )
 
 
@@ -126,13 +157,16 @@ def umap_project(
     random_state: int = 42,
     metric: str = "euclidean",
     chunk_count: int = 1,
+    pca_dim: int | None = None,
 ) -> FloatArray:
     """Project ``matrix`` (n_samples, n_features) into ``dimensions`` (2 or 3).
 
     Deterministic given ``random_state``: the spectral start vector is pinned and the
     negative sampler is seeded, so the same input and seed give bit-identical output.
     ``metric`` is ``"euclidean"`` or ``"cosine"``. ``chunk_count > 1`` enables partial
-    in-epoch feedback (higher local overlap, slower); see the README.
+    in-epoch feedback (higher local overlap, slower). ``pca_dim`` pre-reduces the input to
+    that many principal components before the kNN, to speed up high-dimensional inputs.
+    See the README.
     """
     return fit(
         matrix,
@@ -145,6 +179,7 @@ def umap_project(
         random_state=random_state,
         metric=metric,
         chunk_count=chunk_count,
+        pca_dim=pca_dim,
     ).embedding
 
 
@@ -156,15 +191,22 @@ def transform(model: UMAPModel, matrix: FloatArray, *, n_epochs: int | None = No
     across calls. Deterministic given the model and input. Returns ``(n_new, dimensions)``.
     """
     new_x = _validate(matrix, model.dimensions)
-    if new_x.shape[1] != model.train.shape[1]:
+    if new_x.shape[1] != model.n_features:
         raise ValueError(
-            f"new points have {new_x.shape[1]} features, model was fit on {model.train.shape[1]}"
+            f"new points have {new_x.shape[1]} features, model was fit on {model.n_features}"
         )
     n_new = new_x.shape[0]
     n_train = model.train.shape[0]
     k = min(model.n_neighbors, n_train)
 
-    knn_indices, knn_dists = knn_between(new_x, model.train, k, metric=model.metric)
+    # Project new points through the same PCA basis the fit used, so kNN happens in the
+    # same reduced space as model.train.
+    if model.pca_components is not None and model.pca_mean is not None:
+        new_work = np.ascontiguousarray((new_x - model.pca_mean) @ model.pca_components.T)
+    else:
+        new_work = new_x
+
+    knn_indices, knn_dists = knn_between(new_work, model.train, k, metric=model.metric)
     sigma, rho = smooth_knn_dist(knn_dists, k)
     # exclude_self=False: query and reference are different sets, so index equality between
     # a new point and a training neighbour is a coincidence, not a self-edge to drop.
@@ -212,16 +254,20 @@ def spectral_project(
     n_neighbors: int = 15,
     random_state: int = 42,
     metric: str = "euclidean",
+    pca_dim: int | None = None,
 ) -> FloatArray:
     """Just the spectral initialisation: kNN graph, fuzzy set, spectral embedding.
 
     Useful on its own as a fast, deterministic layout, and as the seed the full
-    optimisation refines.
+    optimisation refines. ``pca_dim`` pre-reduces the input before the kNN.
     """
     x = _validate(matrix, dimensions)
-    n = x.shape[0]
+    n, n_features = x.shape
+    work = x
+    if pca_dim is not None and n_features > pca_dim:
+        work, _mean, _components = _pca_reduce(x, pca_dim)
     k = min(n_neighbors, n)
-    knn_indices, knn_dists = knn(x, k, metric=metric)
+    knn_indices, knn_dists = knn(work, k, metric=metric)
     graph = fuzzy_simplicial_set(knn_indices, knn_dists)
     rng = np.random.default_rng(random_state)
     return spectral_layout(graph, dimensions, rng=rng)

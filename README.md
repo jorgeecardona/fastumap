@@ -112,6 +112,12 @@ init = spectral_project(embeddings, dimensions=2)              # just the spectr
 encoder/CLS embeddings — euclidean on unnormalised output is dominated by vector length,
 not the direction that carries the meaning.
 
+**High-dimensional input — `pca_dim`.** The kNN cost grows with the feature dimension, so
+for wide inputs (e.g. 1024-dim embeddings) pass `pca_dim=100` to pre-reduce to that many
+principal components before the kNN. Embeddings are low-rank, so this preserves the
+neighbourhood structure (overlap within ~0.01 in tests) while shrinking the dominant cost;
+`transform` projects new points through the same basis. Default off.
+
 **Incremental placement.** Fit once, then place new points into the frozen layout without
 refitting — so a drift view stays stable instead of reshuffling every request:
 

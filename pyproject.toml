@@ -3,7 +3,7 @@
 # kernels are numba, which compiles with LLVM at import time (~4s CPU, 172MB of wheels).
 # fastumap is pure numpy+scipy, which ship precompiled kernels and import in milliseconds.
 name = "fastumap"
-version = "0.1.7"
+version = "0.1.8"
 description = "A numba-free UMAP in pure numpy + scipy: imports in milliseconds, no LLVM/JIT at runtime."
 readme = "README.md"
 requires-python = ">=3.11"
