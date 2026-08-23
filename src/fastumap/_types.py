@@ -11,3 +11,6 @@ from numpy.typing import NDArray
 
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
+# float32 is used only for the cached UMAPModel.train, to halve its footprint; transform
+# upcasts to FloatArray for the actual distance compute.
+Float32Array = NDArray[np.float32]

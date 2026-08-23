@@ -12,6 +12,14 @@ from fastumap import fit, transform
 from fixtures import gaussian_clusters
 
 
+def test_model_train_is_float32() -> None:
+    # train is cached as float32 to halve the model footprint (Lambda/ECS); transform
+    # upcasts to float64 for the distance compute, so quality is unaffected.
+    x, _ = gaussian_clusters(n=200, dim=32, seed=0)
+    model = fit(x, 2, random_state=0, n_epochs=50)
+    assert model.train.dtype == np.float32
+
+
 def test_umapmodel_pickle_round_trip() -> None:
     x, _ = gaussian_clusters(n=300, dim=32, seed=0)
     model = fit(x, 2, random_state=0, n_epochs=100)

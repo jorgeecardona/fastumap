@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ._types import FloatArray, IntArray
+from ._types import Float32Array, FloatArray, IntArray
 from .graph import (
     compute_membership,
     find_ab_params,
@@ -69,7 +69,7 @@ class UMAPModel:
     was set). ``embedding`` is the frozen training layout new points are positioned against.
     """
 
-    train: FloatArray
+    train: Float32Array
     embedding: FloatArray
     a: float
     b: float
@@ -130,7 +130,10 @@ def fit(
         chunk_count=chunk_count,
     )
     return UMAPModel(
-        train=work,
+        # Store the training set (only used by transform's kNN) as float32 to halve the
+        # cached-model footprint on memory-constrained hosts (Lambda/ECS); transform upcasts
+        # to float64 for the distance compute so quality is unaffected.
+        train=np.ascontiguousarray(work, dtype=np.float32),
         embedding=embedding,
         a=a,
         b=b,
@@ -206,7 +209,9 @@ def transform(model: UMAPModel, matrix: FloatArray, *, n_epochs: int | None = No
     else:
         new_work = new_x
 
-    knn_indices, knn_dists = knn_between(new_work, model.train, k, metric=model.metric)
+    # train is stored float32 to halve the cached footprint; upcast for full-precision kNN.
+    train = np.ascontiguousarray(model.train, dtype=np.float64)
+    knn_indices, knn_dists = knn_between(new_work, train, k, metric=model.metric)
     sigma, rho = smooth_knn_dist(knn_dists, k)
     # exclude_self=False: query and reference are different sets, so index equality between
     # a new point and a training neighbour is a coincidence, not a self-edge to drop.

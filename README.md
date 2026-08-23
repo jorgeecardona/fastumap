@@ -181,8 +181,9 @@ quantities are cheap to compute from the kNN you already run.
 pickles: fit once, `pickle.dumps(model)`, and every worker — or a worker after restart —
 can `pickle.loads` it instead of refitting. Picklability is a supported contract (a test
 pins it). The footprint is dominated by `train`, which the model keeps for the transform
-kNN: roughly `n_train × n_features × 8` bytes, about **40 MB** for a 5000 × 1024 model,
-times the number of cached copies. (Storing `train` as float32 would halve that; tracked.)
+kNN and caches as **float32**: roughly `n_train × n_features × 4` bytes, about **20 MB** for
+a 5000 × 1024 model, times the number of cached copies. `transform` upcasts to float64 for
+the distance compute, so the halved storage costs no quality.
 
 **Rolling window — out of scope.** "Add these points, drop those older than X" is not a
 supported operation: dropping training points would require rebuilding the graph, i.e. a

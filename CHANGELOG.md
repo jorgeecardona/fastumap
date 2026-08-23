@@ -5,6 +5,14 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-08-23
+
+### Changed
+- `UMAPModel.train` is now cached as **float32**, halving the model's memory footprint
+  (~40 MB → ~20 MB for a 5000 × 1024 model — the concern raised in GitLab #4, and what makes
+  many cached copies affordable on a memory-constrained Lambda/ECS worker). `transform`
+  upcasts to float64 for the distance compute, so quality and determinism are unchanged.
+
 ## [0.1.8] - 2026-08-23
 
 ### Added
