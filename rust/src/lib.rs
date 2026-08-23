@@ -12,7 +12,7 @@
 //!
 //! NOTE: unbuilt scaffold. The first `maturin develop` may need minor PyO3 0.22 API tweaks.
 
-use numpy::{IntoPyArray, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
+use numpy::{IntoPyArray, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 
 const GRAD_CLIP: f64 = 4.0;

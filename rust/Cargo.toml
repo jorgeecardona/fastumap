@@ -16,7 +16,10 @@ name = "fastumap_accel"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.22", features = ["extension-module"] }
+# abi3-py311: build against Python's stable ABI so ONE wheel works on 3.11 and every later
+# version (3.12, 3.13, 3.14, ...) — no per-version rebuild. extension-module lets it link
+# as a Python extension without linking libpython.
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py311"] }
 numpy = "0.22"
 
 [profile.release]
