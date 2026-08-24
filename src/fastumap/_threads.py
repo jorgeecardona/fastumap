@@ -1,15 +1,21 @@
-"""Cap BLAS threads to the container's CPU allotment.
+"""Cap BLAS threads to the container's CPU allotment, where that allotment is visible.
 
-On a CPU-throttled container (a cgroup CFS quota below the host's core count), NumPy's BLAS
-sizes its thread pool to the *host* core count and oversubscribes the quota. Under concurrent
-load — several workers each spawning that many threads against a fraction of a vCPU — the
-threads thrash: measured at 0.5 vCPU with 4 workers, per-call time is ~70 s versus ~42 s when
-threads are pinned (a 1.7x penalty). Reading the quota and limiting the pool to it removes that
-penalty. On an unconstrained host the quota is absent and nothing is capped, so a notebook or a
-full server keeps multi-threaded BLAS.
+When a cgroup CFS quota is visible inside the container *and* the container still reports the
+host's full core count, NumPy's BLAS sizes its thread pool to those cores and oversubscribes the
+quota. Under concurrent load — several workers each spawning that many threads against a fraction
+of a vCPU — the threads thrash: measured under ``docker --cpus=0.5`` on a 16-core host with 4
+worker processes, per-call time was ~70 s versus ~42 s with threads pinned (~1.6x). Reading the
+quota and limiting the pool to it removes that penalty. This fires where the quota is visible
+in-container: ``docker --cpus``, Kubernetes / EKS CPU limits, EC2 with cgroup limits.
+
+It does NOT fire on AWS Fargate (GitLab #10): Fargate meters CPU outside the container's cgroup
+namespace (``cpu.cfs_quota_us`` is ``-1``, no ``cpu.max``), so the quota is invisible here — and
+the task runs in a micro-VM whose ``os.cpu_count()`` already reports the small task core count,
+not a host's dozens, so BLAS does not oversubscribe there in the first place. Wherever no quota
+is visible (a notebook, a full server, Fargate) nothing is capped and BLAS is left alone.
 
 ``threadpoolctl`` is imported lazily — only when a cap actually applies — so ``import fastumap``
-and unconstrained-host runs never touch it.
+and uncapped runs never touch it.
 """
 
 from __future__ import annotations

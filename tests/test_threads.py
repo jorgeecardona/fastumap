@@ -20,6 +20,19 @@ def test_context_manager_is_safe() -> None:
         pass  # must not raise whether or not a cap applies on this host
 
 
+def test_invisible_quota_does_not_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The Fargate case (GitLab #10): the CPU quota is metered outside the container's cgroup, so
+    # it's invisible, and the micro-VM reports only the small task core count. With no visible
+    # quota and cpu_count == affinity, nothing is capped and BLAS is left alone.
+    def two_cores(_pid: int) -> set[int]:
+        return {0, 1}
+
+    monkeypatch.setattr(T, "_cgroup_cpu_quota", lambda: None)
+    monkeypatch.setattr(T.os, "cpu_count", lambda: 2)
+    monkeypatch.setattr(T.os, "sched_getaffinity", two_cores)
+    assert T.blas_thread_limit() is None
+
+
 def test_fractional_quota_floors_to_one_thread(monkeypatch: pytest.MonkeyPatch) -> None:
     if (os.cpu_count() or 1) <= 1:
         pytest.skip("needs a multi-core host to be 'constrained' below")

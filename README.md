@@ -73,12 +73,14 @@ fastumap is therefore the appropriate choice when import and cold-start cost dom
 so when per-call latency on large, high-dimensional batches is the constraint. The optional
 accelerator narrows this gap.
 
-On a CPU-throttled container (a cgroup CFS quota below the host core count — Fargate, ECS,
-Lambda), fastumap caps its BLAS thread pool to the quota automatically. Otherwise an
-unconstrained pool sized to the host's core count oversubscribes the quota and thrashes under
-concurrent load: measured at 0.5 vCPU with four worker processes, per-call time is ~70 s
-uncapped versus ~43 s capped (≈1.6× faster). No configuration is required, and nothing is
-capped on an unconstrained host.
+When a CPU quota is visible inside the container — `docker --cpus`, Kubernetes/EKS CPU limits,
+EC2 cgroups — and the container still reports the host's full core count, an unconstrained BLAS
+pool sized to those cores oversubscribes the quota and thrashes under concurrent load. fastumap
+caps the pool to the quota automatically: measured under `docker --cpus=0.5` on a 16-core host
+with four workers, per-call time drops from ~70 s to ~43 s (≈1.6×). No configuration is needed,
+and nothing is capped where no quota is visible. (AWS Fargate is a known exception: it meters
+CPU outside the container's cgroup, so the quota is invisible and the cap is a no-op there — but
+Fargate's micro-VM also reports a low core count, so BLAS doesn't oversubscribe there anyway.)
 
 ## Server usage
 
