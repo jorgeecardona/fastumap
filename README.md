@@ -1,109 +1,52 @@
 # fastumap
 
-A numba-free UMAP in pure **numpy + scipy**. It exists for one reason: import cost.
+UMAP in pure **numpy + scipy**. No numba, no LLVM, nothing that compiles when you import it.
 
-| | import (cold) | wheels added to image |
+| | cold import | added to image |
 |---|---:|---:|
-| `import umap` (umap-learn) | **~21 s** on a laptop; **148 s** at 0.5 vCPU ×4 | ~172 MB (llvmlite alone 113 MB) |
-| `import fastumap` | **~12 ms** | 0 MB (numpy + scipy already present) |
+| `import umap` (umap-learn) | **~21 s** (laptop) · **148 s** (0.5 vCPU ×4) | ~172 MB |
+| `import fastumap` | **~12 ms** | 0 MB |
 
-umap-learn is excellent, but its kernels are numba, and numba compiles with LLVM at
-*import* time. numpy and scipy ship precompiled kernels, so they import in milliseconds.
-That is the whole thesis: **the problem is not numba, it is compilation at import time**,
-and a vectorised numpy implementation avoids it without giving up much quality.
+**The whole idea:** the problem was never numba — it's that numba compiles at *import* time.
+numpy and scipy are just as compiled, but they ship **precompiled** in the wheel, so they load
+in milliseconds. Same math, no runtime JIT.
 
-## Why this exists — import cost on constrained infra
+## Why import cost matters
 
-The target is a small, CPU-throttled container — the common serverless shape: a fraction of
-a vCPU, a handful of workers, a couple of GB, and a health check that starts polling within
-seconds of boot. Every worker pays every import, and the cgroup meters CPU, so several numba
-compilations run through a fractional-vCPU straw at once:
+A small, CPU-throttled container — a fraction of a vCPU, a few workers, a health check
+polling from the first second:
 
-- `from umap import UMAP` costs ~4.1 CPU-seconds to import; `pynndescent` alone declares 46
-  eagerly-compiled `@njit` functions.
-- Metered through a **0.5 vCPU, 4-worker** cgroup, that import measures **~148 s of wall
-  clock** — past a typical ~120 s health-check window, so the container is killed before it
-  serves a request. At 1 CPU it is 37.8 s, at 2 CPUs 16.1 s: compilation is serial, so more
-  cores barely help.
-- Baking a numba cache into the image does not fix it (11.9 s vs 12.0 s): the eager-signature
-  functions that dominate import have no `cache=True`.
-- `NUMBA_DISABLE_JIT=1` works but the pure-Python kernels are ~100× slower.
+- `import umap` ≈ 4 CPU-seconds. `pynndescent` alone JIT-compiles 46 `@njit` functions.
+- Through a **0.5 vCPU, 4-worker** cgroup that's **~148 s** — past a ~120 s health check. The
+  container is killed before it serves one request.
+- More cores barely help (37.8 s at 1 CPU, 16.1 s at 2) — the compile is serial.
+- Numba cache? No help (eager signatures skip it). `NUMBA_DISABLE_JIT=1`? ~100× slower.
 
-fastumap imports in ~12 ms, on every worker, and leaves the health-check budget intact.
+fastumap imports in **~12 ms**. That's the point.
 
 ## Quality vs umap-learn
 
-Graded on separated Gaussian clusters (dimensions noted per table), against umap-learn on
-the same data. We assert we are *within a tolerance* of the reference, never that layouts
-match: different initialisation and update order rotate and reflect equally-good embeddings.
+Within **0.01–0.02** neighbour-overlap of umap-learn, ahead on global structure, and it buries
+PCA and the random control. Real MNIST (784-dim, single thread, `make bench`):
 
-<!-- QUALITY_TABLE -->
-**n=1000, 64-dim, 8 clusters, 3 seeds** (`make grade`):
-
-| layout | overlap@15 ↑ | global dist corr ↑ |
-|---|---:|---:|
-| fastumap | 0.236 ± 0.003 | **0.400 ± 0.086** |
-| umap-learn | **0.250 ± 0.003** | 0.206 ± 0.033 |
-| pca | 0.165 ± 0.001 | 0.843 ± 0.012 |
-| random | 0.015 ± 0.001 | −0.003 ± 0.003 |
-
-fastumap (default) trails umap-learn by ~0.014 on local neighbourhood overlap and is well
-ahead on global structure. Both beat PCA on local overlap and crush the random control.
-
-**Quality knob — `chunk_count`.** The optimiser defaults to a per-epoch snapshot update
-(`chunk_count=1`), the fast path the 0.5-vCPU service needs. Raising `chunk_count` processes
-each epoch's edges in that many shuffled chunks so later chunks see earlier moves (partial
-in-epoch feedback, toward umap-learn's in-place walk). It trades speed for local overlap:
-
-| chunk_count | overlap@15 (n=1000) | vs default | rel. cost |
-|---:|---:|---:|---:|
-| 1 (default) | 0.234 | — | 1× |
-| 10 | 0.244 | +0.010 | ~5× |
-| 40 | 0.248 | +0.014 (≈ umap-learn) | ~10× |
-
-`umap_project(x, 2, chunk_count=10)` closes most of the gap; it stays deterministic.
-
-### Real data — MNIST (`make bench`)
-
-Single-thread, 784-dim MNIST via `bench/mnist.py` (defaults, `chunk_count=1`):
-
-| n | method | wall-clock | overlap@15 ↑ | global dist corr ↑ |
+| n | method | wall | overlap@15 ↑ | global corr ↑ |
 |---|---|---:|---:|---:|
 | 5000 | **fastumap** | 26 s | 0.333 | 0.310 |
 | 5000 | umap-learn | 73 s | 0.344 | 0.329 |
-| 5000 | pca | 2 s | 0.058 | 0.523 |
 | 10000 | **fastumap** | 72 s | 0.267 | 0.279 |
 | 10000 | umap-learn | 83 s | 0.274 | 0.286 |
-| 10000 | pca | 4 s | 0.039 | 0.471 |
 | 20000 | fastumap | 110 s | 0.188 | 0.323 |
-| 20000 | umap-learn | 31 s | 0.205 | 0.316 |
-| 20000 | pca | 10 s | 0.024 | 0.497 |
+| 20000 | umap-learn | **31 s** | 0.205 | 0.316 |
 
-fastumap stays within **0.01–0.02** overlap of umap-learn at every size, and beats PCA on
-local structure by a wide margin (PCA keeps global distances best, as a linear method does).
-On speed it wins at 5k and 10k. Two honest caveats: (1) wall-clock is measured in one
-process, so umap-learn's later fits reuse the numba compile paid on the first — its 20k time
-excludes the ~20 s compile a *fresh* process pays every time, which is the cost fastumap
-exists to avoid; (2) at 20k fastumap's brute-force O(n²) kNN and Python-loop SGD lose to
-pynndescent — the case the approximate-kNN backend (roadmap #15) addresses.
+- **Wins at 5k/10k, loses at 20k** — the brute-force O(n²) kNN catches up with it (approximate
+  kNN is roadmap #15). PCA sits at ~0.02–0.06 overlap: a linear method can't compete locally.
+- umap-learn's times here **reuse the numba compile** paid on the first fit; a fresh process
+  pays ~20 s every time — the cost fastumap exists to avoid.
+- **`chunk_count=10`** closes most of the local-overlap gap (~5× slower, still deterministic).
+  Default `1` is the fast path.
 
-### The per-call trade at 1024 dimensions
-
-At a common embedding shape — 1024-dim, n=5000 — fastumap is roughly **2× slower per call**
-than umap-learn, measured inside a 0.5-vCPU container (umap-learn ~22 s vs fastumap ~38–53 s).
-That is inherent, not a missing optimisation: the **layout SGD dominates** wall-clock, and a
-pure-numpy vectorised SGD cannot match umap-learn's numba-compiled in-place optimiser
-(`pca_dim` trims only the kNN share, ~9%; the O(n²) part is roadmap #15).
-
-It does not undo the reason to use this. fastumap boots the container in **~10 s vs ~148 s**
-for the numba stack (four workers on half a vCPU), so it is the right choice when cold-start
-/ import cost dominates — a Fargate/Lambda service that would otherwise crash-loop on boot —
-and a poorer one when per-call latency on large high-dimensional batches is the bottleneck.
-
-Metrics:
-- **overlap@k** — share of each point's k input-space neighbours still among its k nearest
-  after projection. Chance is ~`k/(n-1)`; always read against the random control.
-- **global dist corr** — Spearman correlation of all pairwise distances, before vs after.
+> overlap@k = share of each point's k input neighbours still neighbours after projection
+> (read it against random). global corr = Spearman corr of all pairwise distances, before vs after.
 
 ## Install
 
@@ -111,143 +54,75 @@ Metrics:
 pip install fastumap        # numpy + scipy, nothing else
 ```
 
-**Optional native speedup.** A Rust reimplementation of the SGD lives in [`rust/`](rust/)
-(built with maturin). When it's installed, fastumap auto-detects and uses it — measured
-**~1.7–1.9× faster with better overlap**, deterministic, one abi3 wheel for Python 3.11 and
-later. It's opt-in; the base install stays pure numpy+scipy and is the fallback. (PyPI wheels
-for the accelerator are on the roadmap; for now `maturin develop --release -m rust/Cargo.toml`.)
-
 ## Use
 
 ```python
 from fastumap import umap_project, spectral_project
 
-xy  = umap_project(embeddings, dimensions=2)                    # (n, 2)
-xyz = umap_project(embeddings, dimensions=3)                    # (n, 3)
-cos = umap_project(embeddings, dimensions=2, metric="cosine")  # for text/CLS embeddings
-init = spectral_project(embeddings, dimensions=2)              # just the spectral init
+xy  = umap_project(x, 2)                     # (n, 2)
+xyz = umap_project(x, 3)                     # (n, 3)
+cos = umap_project(x, 2, metric="cosine")    # text / CLS embeddings
 ```
 
-`metric` is `"euclidean"` (default) or `"cosine"`. Cosine is usually what you want for
-encoder/CLS embeddings — euclidean on unnormalised output is dominated by vector length,
-not the direction that carries the meaning.
+- **cosine** for encoder embeddings — euclidean on unnormalised vectors is dominated by
+  length, not the direction that carries meaning.
+- **`pca_dim=100`** for wide inputs (e.g. 1024-dim): pre-reduces before the kNN, overlap holds
+  within ~0.01, off by default.
 
-**High-dimensional input — `pca_dim`.** The kNN cost grows with the feature dimension, so
-for wide inputs (e.g. 1024-dim embeddings) pass `pca_dim=100` to pre-reduce to that many
-principal components before the kNN. Embeddings are low-rank, so this preserves the
-neighbourhood structure (overlap within ~0.01 in tests) while shrinking the dominant cost;
-`transform` projects new points through the same basis. Default off.
+Same input + seed → **bit-identical** output across processes. `umap_project` also takes
+`n_neighbors`, `min_dist`, `spread`, `n_epochs`, `negative_sample_rate`, `random_state`.
 
-**Incremental placement.** Fit once, then place new points into the frozen layout without
-refitting — so a drift view stays stable instead of reshuffling every request:
+## In a server
+
+Thread-safe — fresh RNG per call, no module-level state, so
+`await asyncio.to_thread(umap_project, x, 2)` is fine.
+
+Don't refit every request. Fit once, place new points:
 
 ```python
-from fastumap import fit, transform
-
-model = fit(window, dimensions=2)      # UMAPModel; model.embedding is the layout
-new_xy = transform(model, new_points)  # (n_new, 2), placed against the fixed layout
+model = fit(window, 2)          # cache it — UMAPModel pickles
+xy    = transform(model, pts)   # per request: cheap, stable across requests
 ```
 
-Same input and seed give **bit-identical** output across processes (the layout must be
-stable across reloads so people can compare the picture over time). `umap_project` takes
-`n_neighbors`, `min_dist`, `spread`, `n_epochs`, `negative_sample_rate`, `random_state`,
-`metric`, and `chunk_count`.
+- **transform ≈ refit?** Keeps ~**72%** of a full refit's local overlap. Good for placing
+  in-distribution points against a fixed window; refit when the window itself shifts.
+- **Gone stale?** Watch new-point distance to nearest training neighbour. Drifts to 2–3× the
+  training mean → time to refit. (A timer is a weak proxy.)
+- **Memory:** ~**20 MB** per cached 5000×1024 model (`train` kept as float32).
+- **Rolling window** ("add these, drop old ones") and **sparse input**: not supported — both
+  would need a rebuild. Densify sparse first; `fit`/`transform` cover the append-only case.
 
-## Using this in a server
+## Speed, honestly
 
-fastumap is safe to call from a worker thread of an async server (`asyncio.to_thread`):
-arguments in, array out, a fresh seeded RNG per call, no module-level mutable state. Two
-projections running concurrently in different threads each produce their single-threaded
-result — pinned by a test — so `await asyncio.to_thread(umap_project, matrix, 2)` is fine.
+At 1024-dim, n=5000, fastumap is ~**2× slower per call** than umap-learn (~38–53 s vs ~22 s).
+That's inherent — a vectorised numpy SGD can't match numba's in-place walk. Use fastumap when
+**cold-start / import cost dominates**; reach for umap-learn when **per-call latency on big
+high-dimensional batches** does.
 
-For a long-lived server, don't recompute the whole layout every request. Fit once per
-window, cache the model, and place newly-arrived points with `transform`:
+**Optional Rust accelerator** ([`rust/`](rust/)) — ~**1.7–1.9× faster with better overlap**,
+one abi3 wheel for Python 3.11+. Auto-detected when installed; the base stays pure numpy+scipy
+and is the fallback.
 
-```python
-model = fit(window, dimensions=2)     # once per window; cache the UMAPModel
-xy = transform(model, new_points)     # per request — cheap, and stable across requests
-```
+## Guarantees (each pinned by a test)
 
-**Is a transform comparable to a refit?** A `transform` layout is an approximation of a
-full refit of the same window: new points are placed against the frozen training embedding,
-so the picture stays put across requests (a full refit would rotate/reflect the whole
-thing). Measured — fit on 80% of a set, transform the held-out 20% — the transformed points
-keep about **72% of the local neighbour overlap** they would get in a full refit (overlap@15
-0.168 vs 0.235 at n=1000). So it is a real shortcut, not a free one: good enough for placing
-in-distribution points against a stable window, weaker at re-discovering global structure.
-Refit when the window itself shifts.
-
-**When does a cached model go stale?** Watch the distance from new points to their nearest
-training neighbour. When the batch mean of that distance drifts well above the training
-set's own mean nearest-neighbour distance (say 2–3×), or a rising share of new points have
-every neighbour far from any training point, the transform is extrapolating and it is time
-to refit. A timer is a weak proxy; this distance signal reacts to the actual drift, and both
-quantities are cheap to compute from the kNN you already run.
-
-**Persisting a model.** `UMAPModel` is a plain frozen dataclass of numpy arrays, so it
-pickles: fit once, `pickle.dumps(model)`, and every worker — or a worker after restart —
-can `pickle.loads` it instead of refitting. Picklability is a supported contract (a test
-pins it). The footprint is dominated by `train`, which the model keeps for the transform
-kNN and caches as **float32**: roughly `n_train × n_features × 4` bytes, about **20 MB** for
-a 5000 × 1024 model, times the number of cached copies. `transform` upcasts to float64 for
-the distance compute, so the halved storage costs no quality.
-
-**Rolling window — out of scope.** "Add these points, drop those older than X" is not a
-supported operation: dropping training points would require rebuilding the graph, i.e. a
-refit. Use `fit`/`transform` for the append-only case (new points against a fixed window),
-and refit when the window slides.
-
-## Sparse input
-
-Not supported — `umap_project`/`fit` take a **dense** numpy array. The blocked kNN relies
-on dense BLAS matmul, and the target workload is dense encoder/CLS embeddings, so a native
-sparse distance path is out of scope. Passing a `scipy.sparse` matrix raises a `TypeError`
-telling you to densify first (`matrix.toarray()`). Revisit if a sparse workload actually
-shows up.
-
-## Guarantees (enforced by tests)
-
-- **numpy + scipy only** at runtime — no numba, llvmlite, scikit-learn, or compiled
-  extension of our own. A test asserts the JIT stack is never imported.
-- **Import under 200 ms** — a subprocess test measures it.
-- **Deterministic** — pinned ARPACK start vector, seeded negative sampler; identical bytes
-  across processes.
-- **Thread-safe** — no module-level mutable state, a fresh RNG per call; concurrent
-  projections in different threads each match their single-threaded result (a test pins it),
-  so it is safe to call from `asyncio.to_thread`.
-- **Memory bounded** — the n-by-n distance matrix is never materialised (512-row blocked
-  kNN). At the worst case (5000 × 1024) the fit adds ~102 MB over the import+input baseline
-  (175 MB total peak); the test enforces a 200 MB ceiling.
-- **Time budgeted** — single-thread wall-clock ~5.3 s at 1000 × 1024, ~32 s at 5000 × 1024;
-  a CI test measures under a single-core cap and fails on a regression past a generous
-  ceiling (25 s / 120 s). The SGD dominates — the number is honest, not yet fast; speeding
-  it up further is tracked.
-- **2-D and 3-D**, both first-class. **Typed**, pyright strict.
+- **numpy + scipy only** at runtime — no numba, llvmlite, sklearn, or compiled code of ours.
+- **Import < 200 ms** · **deterministic** (bit-identical) · **thread-safe**.
+- **Memory-bounded** — the n×n distance matrix is never built (blocked kNN); < 200 MB at 5000×1024.
+- **2-D and 3-D**, both first-class · **typed**, pyright strict.
 
 ## Testing
 
 ```bash
-make check     # lint + typecheck + tests, one Python (mirrors CI's gate)
-make tox       # the suite across Python 3.11 / 3.12 / 3.13 (uv provisions each)
-make fargate   # import + fit timing under a Fargate-like cap: docker --cpus=0.5 --memory=2g
+make check     # lint + typecheck + tests (mirrors CI's gate)
+make tox       # across Python 3.11 / 3.12 / 3.13
+make fargate   # import + fit timing under docker --cpus=0.5 --memory=2g
 ```
 
-`make fargate` reproduces the serverless constraint — `--cpus` is a CFS quota (throttles
-total CPU-time, like Fargate's cgroup), so the import cost and per-call time it prints mean
-what they will on 0.5 vCPU. `CPUS=1 MEM=3g make fargate` (via `bench/fargate.sh`) tries other
-shapes, e.g. a Lambda size.
-
-## Releasing
-
-CI (GitLab, moon + uv + proto) runs lint, format, typecheck, tests, build on every push.
-On `main` it runs `:release`: the same checks, then publishes to PyPI via **OIDC Trusted
-Publishing** (no stored token, pending publisher configured) whenever the version in
-`pyproject.toml` is not yet on PyPI — idempotent, so it is a no-op on every other pipeline.
+`--cpus` is a CFS quota (throttles total CPU-time like a container cgroup), so the numbers
+mean what they will on 0.5 vCPU.
 
 ## Not affiliated with UMAP
 
-fastumap is an **independent reimplementation** of the UMAP algorithm
-([McInnes, Healy, Melville, arXiv:1802.03426](https://arxiv.org/abs/1802.03426);
-reference implementation [lmcinnes/umap](https://github.com/lmcinnes/umap)). It is not
-affiliated with or endorsed by the UMAP authors, and it is **not a drop-in replacement** —
-the public surface is deliberately small. MIT licensed.
+An **independent reimplementation** of the UMAP algorithm
+([McInnes, Healy, Melville, arXiv:1802.03426](https://arxiv.org/abs/1802.03426)) — not endorsed
+by the authors, and **not a drop-in replacement**. MIT licensed.
