@@ -13,6 +13,7 @@ import numpy as np
 from ._threads import with_blas_limit
 from ._types import Float32Array, FloatArray, IntArray
 from .graph import (
+    categorical_intersection,
     compute_membership,
     find_ab_params,
     fuzzy_simplicial_set,
@@ -165,6 +166,8 @@ def fit(
     pca_dim: int | None = None,
     knn: str = "auto",
     init: FloatArray | None = None,
+    y: IntArray | None = None,
+    target_weight: float = 0.5,
 ) -> UMAPModel:
     """Fit a UMAP layout and return a :class:`UMAPModel` (use ``.embedding`` for the coords).
 
@@ -174,6 +177,9 @@ def fit(
     projects new points through the same basis. ``init`` overrides the spectral start with a
     given ``(n, dimensions)`` embedding — pass the previous view's coordinates so a refreshed
     layout stays comparable instead of rotating or reflecting; place any new rows yourself.
+    ``y`` (categorical class labels, one per point, ``-1`` for unlabelled) turns on supervised
+    projection: same-label points attract, weighted by ``target_weight`` in ``[0, 1]`` (default
+    0.5; 1.0 severs every inter-class edge). Default ``y=None`` is unchanged unsupervised UMAP.
     """
     x = _validate(matrix, dimensions)
     n, n_features = x.shape
@@ -186,6 +192,10 @@ def fit(
 
     knn_indices, knn_dists = knn_graph(work, k, metric=metric, mode=knn)
     graph = fuzzy_simplicial_set(knn_indices, knn_dists)
+    if y is not None:
+        graph = categorical_intersection(
+            graph, np.asarray(y, dtype=np.int64), target_weight=target_weight
+        )
     rng = np.random.default_rng(random_state)
     if init is not None:
         if init.shape != (n, dimensions):
@@ -239,6 +249,8 @@ def umap_project(
     pca_dim: int | None = None,
     knn: str = "auto",
     init: FloatArray | None = None,
+    y: IntArray | None = None,
+    target_weight: float = 0.5,
 ) -> FloatArray:
     """Project ``matrix`` (n_samples, n_features) into ``dimensions`` (2 or 3).
 
@@ -263,6 +275,8 @@ def umap_project(
         pca_dim=pca_dim,
         knn=knn,
         init=init,
+        y=y,
+        target_weight=target_weight,
     ).embedding
 
 

@@ -49,6 +49,33 @@ def fuzzy_union(
     )
 
 
+def reset_local_connectivity(
+    head: IntArray, tail: IntArray, weight: FloatArray, n: int
+) -> tuple[IntArray, IntArray, FloatArray]:
+    """umap-learn's ``reset_local_connectivity``: row-max-normalise, then fuzzy-union.
+
+    Divides each row by its largest entry (restoring a 1.0 membership for every point's
+    strongest edge after the supervised attenuation), then re-symmetrises with the
+    probabilistic t-conorm ``A + At - A∘At``. Structural zeros are dropped.
+    """
+    from scipy import sparse
+
+    a = sparse.coo_matrix((weight, (head, tail)), shape=(n, n)).tocsr()
+    a.eliminate_zeros()
+    row_max = np.asarray(a.max(axis=1).toarray(), dtype=np.float64).ravel()
+    a = sparse.diags(1.0 / np.where(row_max > 0.0, row_max, 1.0)) @ a
+    at = a.transpose().tocsr()
+    prod = a.multiply(at)
+    combined = (a + at - prod).tocsr()
+    combined.eliminate_zeros()
+    coo = combined.tocoo()
+    return (
+        np.asarray(coo.row, dtype=np.int64),
+        np.asarray(coo.col, dtype=np.int64),
+        np.asarray(coo.data, dtype=np.float64),
+    )
+
+
 def curve_fit_ab(xv: FloatArray, yv: FloatArray) -> tuple[float, float]:
     """Least-squares fit of ``1 / (1 + a * x**(2b))`` to the target curve.
 

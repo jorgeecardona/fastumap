@@ -40,6 +40,23 @@ cos = umap_project(x, 2, metric="cosine")    # text / CLS embeddings
 `umap_project` also accepts `n_neighbors`, `min_dist`, `spread`, `n_epochs`,
 `negative_sample_rate`, `random_state`, and `chunk_count`.
 
+## Supervised projection
+
+Pass categorical labels as `y` to let the classes inform the layout — same-label points attract,
+so structure that is separable in the input space stays separable in 2-D instead of interleaving:
+
+```python
+xy = umap_project(x, 2, y=labels)                     # labels: one int per point, -1 = unlabelled
+xy = umap_project(x, 2, y=labels, target_weight=0.9)  # lean harder on the labels
+```
+
+`target_weight` ∈ [0, 1] (default 0.5) trades geometry against labels: 0.0 attenuates inter-class
+edges the least, 1.0 severs them entirely. `-1` labels are treated as unlabelled (semi-supervised).
+Default `y=None` is ordinary unsupervised UMAP, unchanged. This is a faithful port of umap-learn's
+categorical `discrete_metric_simplicial_set_intersection`; the original UMAP paper only proposes
+the simplicial-set-intersection idea (arXiv:1802.03426, §7 Future Work), so the reference
+implementation is the source. See umap-learn's [supervised docs](https://umap-learn.readthedocs.io/en/latest/supervised.html).
+
 ## Quality relative to umap-learn
 
 fastumap stays within 0.01–0.02 neighbour overlap of umap-learn and is marginally ahead on

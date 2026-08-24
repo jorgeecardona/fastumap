@@ -139,6 +139,38 @@ def fuzzy_simplicial_set(
     return FuzzyGraph(n=n, head=head, tail=tail, weight=weight)
 
 
+def categorical_intersection(
+    graph: FuzzyGraph, y: IntArray, *, target_weight: float = 0.5
+) -> FuzzyGraph:
+    """Categorical supervised UMAP: fold class labels ``y`` into the fuzzy graph.
+
+    Ported from umap-learn 0.5.12 (``discrete_metric_simplicial_set_intersection`` /
+    ``fast_intersection`` / ``reset_local_connectivity``); the theory paper (arXiv:1802.03426)
+    proposes only the simplicial-set-intersection idea as future work (Sec. 7), so the reference
+    implementation is the authority here. See umap-learn's "Supervised Dimension Reduction and
+    Metric Learning" docs and McInnes et al., JOSS 3(29):861.
+
+    Same-label edges are kept; edges between different labels are multiplied by
+    ``exp(-far_dist)`` with ``far_dist = 2.5 / (1 - target_weight)`` (edges are removed outright
+    when ``target_weight >= 1``); edges touching an unlabelled point (``y == -1``) are multiplied
+    by ``exp(-1)`` (semi-supervised). The attenuated graph is then row-max-normalised and
+    re-symmetrised. ``target_weight`` is in ``[0, 1]`` (default 0.5): 0.0 pushes classes apart the
+    least, 1.0 severs every inter-class edge.
+    """
+    if y.shape[0] != graph.n:
+        raise ValueError(f"y must have one label per point ({graph.n}), got {y.shape[0]}")
+    far_dist = 2.5 / (1.0 - target_weight) if target_weight < 1.0 else 1.0e12
+    yi = y[graph.head]
+    yj = y[graph.tail]
+    unknown = (yi == -1) | (yj == -1)
+    different = (~unknown) & (yi != yj)
+    w = graph.weight.copy()
+    w[unknown] *= np.exp(-1.0)  # unknown_dist = 1.0, not scaled by target_weight (per umap-learn)
+    w[different] *= np.exp(-far_dist)
+    head, tail, weight = _scipy.reset_local_connectivity(graph.head, graph.tail, w, graph.n)
+    return FuzzyGraph(n=graph.n, head=head, tail=tail, weight=weight)
+
+
 def find_ab_params(spread: float, min_dist: float) -> tuple[float, float]:
     """Fit the output kernel ``1/(1 + a x^(2b))`` to the offset exponential target."""
     xv = np.linspace(0.0, spread * 3.0, 300)
