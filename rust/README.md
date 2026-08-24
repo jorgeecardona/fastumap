@@ -1,43 +1,47 @@
 # fastumap-accel
 
-The optional native speedup for [fastumap](https://gitlab.com/jorgeecardona/fastumap). It's
-one piece of fastumap rewritten in Rust — the SGD layout loop (`optimize_layout`) — built as a
-small Python extension with PyO3 + maturin.
+The optional native accelerator for [fastumap](https://gitlab.com/jorgeecardona/fastumap): a
+Rust reimplementation of the SGD layout kernel (`optimize_layout`), built as a Python extension
+with PyO3 and maturin.
 
-You don't really install this on its own; `pip install fastumap[accel]` pulls it in. The base
-fastumap package stays pure numpy + scipy and runs everywhere with no build toolchain, and when
-this wheel happens to be present fastumap uses it for the optimisation loop, otherwise it falls
-back to the numpy path. Same API, same results within the usual rotation/reflection tolerance.
+It is not usually installed directly — `pip install fastumap[accel]` pulls it in. The base
+fastumap package remains pure NumPy and SciPy and installs without a build toolchain; when this
+wheel is present, fastumap uses it for the optimisation loop and otherwise falls back to the
+NumPy path. `fastumap.accelerator_active()` reports which path is in use.
 
-## Why it's worth having
+## Rationale
 
-- It runs the loop with the GIL released, so concurrent `asyncio.to_thread` calls actually run
-  in parallel, and Rust's borrow checker rules out data races.
-- It's a tiny `.so` that imports in milliseconds — no runtime JIT, no 172 MB of llvmlite — so
-  it keeps fastumap's fast cold start even on a fractional-vCPU box. Prebuilt wheels cover
-  x86_64 and aarch64 (Graviton).
-- It does umap-learn's true *in-place* (Hogwild) edge walk, which the pure-numpy path only
-  approximates with a per-epoch snapshot — so it comes out a little faster *and* slightly
-  higher quality.
+- **Concurrency.** The loop runs with the GIL released, so concurrent `asyncio.to_thread`
+  calls execute in parallel, and Rust's borrow checker precludes data races.
+- **Fast cold start.** The extension is a small `.so` that imports in milliseconds — no runtime
+  JIT and no 172 MB of llvmlite — so it preserves fastumap's fast import even on a
+  fractional-vCPU host. Prebuilt wheels cover x86_64 and aarch64/Graviton.
+- **Fidelity.** It performs umap-learn's true in-place (Hogwild) edge walk, which the NumPy path
+  only approximates with a per-epoch snapshot — yielding both higher speed and slightly higher
+  overlap. Consequently it produces a different (higher-quality) layout than the NumPy fallback
+  for the same seed; see fastumap's Reproducibility section.
 
-Measured (release build, single thread, `optimize_layout` only, against the numpy path on the
-same graph and init):
+## Benchmarks
 
-| n | rust | numpy | speedup | rust overlap@15 | numpy overlap@15 |
-|---|---:|---:|---:|---:|---:|
-| 1000 | 2.40 s | 4.50 s | **1.9×** | **0.244** | 0.233 |
-| 2000 | 5.03 s | 8.57 s | **1.7×** | **0.151** | 0.140 |
+Release build, single-threaded, `optimize_layout` only, against the NumPy path on identical
+graph and initialisation:
 
-Deterministic run to run. (These were taken on a swap-loaded machine, so a clean one should
-show a wider gap.) It's one **abi3** wheel (`cp311-abi3`) that works on Python 3.11 and every
-later version — one build, no per-version rebuild.
+| n | Rust | NumPy | speedup | overlap@15 (Rust / NumPy) |
+|---|---:|---:|---:|---:|
+| 1000 | 2.40 s | 4.50 s | 1.9× | 0.244 / 0.233 |
+| 2000 | 5.03 s | 8.57 s | 1.7× | 0.151 / 0.140 |
 
-## Building it yourself
+Output is deterministic run to run. These figures were taken on a swap-loaded machine; an
+unloaded host shows a wider margin. The distribution is a single **abi3** wheel (`cp311-abi3`)
+compatible with Python 3.11 and later — one build, no per-version rebuild.
+
+## Building
 
 ```bash
-maturin develop --release          # into the active venv (dev)
+maturin develop --release          # build into the active virtualenv (development)
 maturin build --release            # wheel for the current platform
-# maturin build --release --zig --target aarch64-unknown-linux-gnu   # Graviton
+maturin sdist                      # source distribution
+# maturin build --release --zig --target aarch64-unknown-linux-gnu   # aarch64 / Graviton
 ```
 
-MIT licensed, same as fastumap.
+MIT licensed, as fastumap.

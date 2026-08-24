@@ -24,6 +24,18 @@ try:
 except ImportError:
     _accel_optimize = None
 
+
+def accelerator_active() -> bool:
+    """Whether the native ``fastumap-accel`` SGD kernel is installed and will be used.
+
+    Analogous to ``torch.cuda.is_available()``. The accelerator does umap-learn's true
+    in-place walk, so it produces a *different* (higher-quality) layout than the pure-numpy
+    fallback for the same seed. Output is reproducible within one environment; installing or
+    removing ``fastumap-accel`` changes it. Use this to record which path produced a stored
+    projection. (The default path uses it whenever present; ``chunk_count > 1`` forces numpy.)
+    """
+    return _accel_optimize is not None
+
 _GRID_SPACING = 3.0
 _SCALE = 10.0
 _INIT_NOISE = 1e-4

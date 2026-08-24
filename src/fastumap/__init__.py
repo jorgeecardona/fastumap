@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 __all__ = [
     "UMAPModel",
     "__version__",
+    "accelerator_active",
     "fit",
     "global_distance_correlation",
     "neighbor_overlap",
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
     # drift from what was published. Declared here for type checkers.
     __version__: str
 
+    from .layout import accelerator_active
     from .metrics import global_distance_correlation, neighbor_overlap, random_layout
     from .projection import UMAPModel, fit, spectral_project, transform, umap_project
 
@@ -51,4 +53,8 @@ def __getattr__(name: str) -> object:
         from . import metrics
 
         return getattr(metrics, name)
+    if name == "accelerator_active":
+        from . import layout
+
+        return layout.accelerator_active
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
