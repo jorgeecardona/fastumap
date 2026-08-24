@@ -176,7 +176,8 @@ def fit(
     components before the kNN, which speeds up high-dimensional inputs; ``transform``
     projects new points through the same basis. ``init`` overrides the spectral start with a
     given ``(n, dimensions)`` embedding — pass the previous view's coordinates so a refreshed
-    layout stays comparable instead of rotating or reflecting; place any new rows yourself.
+    layout stays comparable instead of rotating or reflecting (a warm start: the SGD still
+    refines, so lower ``n_epochs`` for a lighter touch); place any new rows yourself.
     ``y`` (categorical class labels, one per point, ``-1`` for unlabelled) turns on supervised
     projection: same-label points attract, weighted by ``target_weight`` in ``[0, 1]`` (default
     0.5; 1.0 severs every inter-class edge). Default ``y=None`` is unchanged unsupervised UMAP.

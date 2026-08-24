@@ -183,7 +183,9 @@ def optimize_layout(
         return np.ascontiguousarray(result, dtype=np.float64)
 
     epoch_of_next = epochs_per_sample.copy()
-    emb = np.ascontiguousarray(embedding, dtype=np.float64)
+    # A copy, not ascontiguousarray: emb is accumulated in place (emb += ...), and an already
+    # C-contiguous float64 input (e.g. the caller's `init`) would otherwise be mutated (#15).
+    emb = np.array(embedding, dtype=np.float64, order="C")
     n_vertices = emb.shape[0]
 
     def edge_delta(edge_idx: IntArray, positions: FloatArray, alpha: float) -> FloatArray:
@@ -275,7 +277,7 @@ def optimize_transform(
     """
     epochs_per_sample = make_epochs_per_sample(weight, n_epochs)
     epoch_of_next = epochs_per_sample.copy()
-    emb = np.ascontiguousarray(new_embedding, dtype=np.float64)
+    emb = np.array(new_embedding, dtype=np.float64, order="C")  # copy: accumulated in place (#15)
     ref = fixed_embedding
     n_ref = ref.shape[0]
 

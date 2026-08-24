@@ -15,15 +15,31 @@ def test_init_runs_and_is_deterministic() -> None:
     assert np.array_equal(a, b)
 
 
-def test_init_stays_near_the_given_start() -> None:
-    # Seeded from the previous layout, the optimiser refines rather than re-laying-out from a
-    # fresh spectral start (which could rotate/reflect). The result should stay closer to the
-    # given init than a from-scratch fit does.
+def test_init_biases_toward_the_start_frame() -> None:
+    # A warm start: seeded from the previous layout, the result keeps the previous frame far
+    # better than a fresh spectral start (which is free to rotate/reflect). The optimiser still
+    # moves points, so this is a correlation, not a freeze — seeded tracks prev, fresh does not.
     x = np.random.default_rng(1).standard_normal((400, 24))
     prev = umap_project(x, 2, random_state=42)
     seeded = umap_project(x, 2, random_state=99, init=prev)
     fresh = umap_project(x, 2, random_state=99)
-    assert np.abs(seeded - prev).mean() < np.abs(fresh - prev).mean()
+
+    def frame_corr(a: np.ndarray, b: np.ndarray) -> float:
+        return abs(float(np.corrcoef(a.ravel(), b.ravel())[0, 1]))
+
+    assert frame_corr(seeded, prev) > frame_corr(fresh, prev) + 0.1
+
+
+def test_init_is_not_mutated_or_aliased() -> None:
+    # #15: the in-place SGD (from #5) must not write through to the caller's init array, and
+    # the result must be a fresh array — otherwise "before" and "after" alias and a drift
+    # comparison silently reads zero movement.
+    x = np.random.default_rng(3).standard_normal((300, 24))
+    prev = umap_project(x, 2, random_state=42)
+    snapshot = prev.copy()
+    result = umap_project(x, 2, random_state=42, init=prev)
+    assert not np.shares_memory(result, prev)
+    assert np.array_equal(prev, snapshot)
 
 
 def test_init_wrong_shape_raises() -> None:
