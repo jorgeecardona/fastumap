@@ -59,15 +59,15 @@ ci:
         moon run :ci -c 1
       fi
 
-# Build the optional Rust accelerator, run the suite through the NATIVE SGD path, and
-# produce the abi3 wheel as an artifact. Independent of `ci` (needs: []). allow_failure
-# while the memory-limited self-hosted runner's Rust build is proven stable; tighten to a
-# hard gate once it is. Everything runs via .venv/bin to avoid `uv run` re-syncing the
-# ad-hoc maturin + the built accel back out of the environment.
+# Build the optional Rust accelerator, run the suite through the NATIVE SGD path, produce
+# the abi3 wheels, and (on main) publish them. Independent of `ci` (needs: []). Hard gate --
+# proven stable on the runner (pipeline #31). The venv is put first on PATH so bare
+# `maturin`/`python` resolve to it, avoiding `uv run` re-syncing the ad-hoc maturin + the
+# built accel back out of the environment. The aarch64 cross-compile stays best-effort
+# (`|| echo` in script), so an ARM-only flake can't red the gate.
 accel:
   image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
   needs: []
-  allow_failure: true
   id_tokens:
     PYPI_ID_TOKEN:
       aud: pypi
@@ -111,11 +111,10 @@ accel:
 # Run a fast, version-sensitive subset on Python 3.11 / 3.12 / 3.13 (uv provisions each
 # interpreter, tox-uv drives it) so version-specific breakage is caught. Kept to a subset
 # because the full suite 3x would overwhelm the memory-limited runner; `make tox` locally
-# runs everything. allow_failure until it is proven stable on the runner.
+# runs everything. Hard gate -- proven stable on the runner.
 test-matrix:
   image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
   needs: []
-  allow_failure: true
   variables:
     UV_LINK_MODE: copy
   before_script:
