@@ -93,17 +93,26 @@ place new points into the existing layout:
 
 ```python
 from fastumap import fit, transform
+from fastumap.projection import UMAPModel
 
-model = fit(window, 2)          # UMAPModel; picklable, cache it
-xy    = transform(model, pts)   # inexpensive; the layout stays fixed across requests
+model = fit(window, 2)                                 # cache it
+xy, fit_distance = transform(model, pts, return_distances=True)   # coords + per-point fit
+
+model.to_npz("layout.npz")                             # persist across restarts (versioned)
+model = UMAPModel.from_npz("layout.npz")
 ```
 
-`transform` approximates a full refit, retaining roughly 72% of the local overlap that
-refitting would produce while keeping the embedding stable across requests. Refit when the
-input distribution shifts; a practical trigger is the distance from new points to their nearest
-training neighbour rising to 2–3× the training mean. A cached 5000×1024 model occupies about
-20 MB (training data stored as float32). Rolling windows and sparse input are not supported —
-densify sparse input first, and refit when the window slides.
+`transform` approximates a full refit (roughly 72% of its local overlap) while keeping the
+embedding stable across requests. `return_distances=True` returns each new point's distance to
+its nearest training neighbour — a per-point measure of fit: points landing 2–3× further out
+than the training set's own mean are extrapolations, and a rising batch mean is the signal to
+refit. Persist a model with `to_npz` / `from_npz`, a versioned numpy format that survives
+releases where a raw `pickle` would break on any dataclass change. To keep a *refreshed* view
+comparable without the fit/transform split, pass the previous coordinates as
+`umap_project(window, 2, init=previous)` so carried-over points start where they were (you place
+any new rows). A cached 5000×1024 model occupies about 20 MB (training data stored as float32).
+Rolling windows and sparse input are not supported — densify sparse input first, and refit when
+the window slides.
 
 ## The optional accelerator
 

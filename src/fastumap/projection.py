@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from typing import BinaryIO, Literal, overload
 
 import numpy as np
 
@@ -61,6 +63,9 @@ def _pca_reduce(x: FloatArray, pca_dim: int) -> tuple[FloatArray, FloatArray, Fl
     return reduced, mean, components
 
 
+_MODEL_FORMAT = 1  # bump when the serialised fields change; from_npz checks it and errors clearly
+
+
 @dataclass(frozen=True)
 class UMAPModel:
     """A fitted layout plus everything ``transform`` needs to place new points.
@@ -83,6 +88,66 @@ class UMAPModel:
     pca_mean: FloatArray | None = None
     pca_components: FloatArray | None = None
 
+    def to_npz(self, file: str | os.PathLike[str] | BinaryIO) -> None:
+        """Save to a versioned ``.npz`` — portable across releases, unlike ``pickle`` which
+        welds the model to the exact dataclass layout. Load it back with :meth:`from_npz`."""
+        np.savez(
+            file,
+            format_version=np.int64(_MODEL_FORMAT),
+            train=self.train,
+            embedding=self.embedding,
+            scalars=np.array([self.a, self.b], dtype=np.float64),
+            ints=np.array(
+                [
+                    self.n_neighbors,
+                    self.dimensions,
+                    self.random_state,
+                    self.negative_sample_rate,
+                    self.n_features,
+                ],
+                dtype=np.int64,
+            ),
+            metric=np.array(self.metric),
+            has_pca=np.array(self.pca_mean is not None),
+            pca_mean=self.pca_mean if self.pca_mean is not None else np.zeros(0),
+            pca_components=self.pca_components if self.pca_components is not None else np.zeros(0),
+        )
+
+    @classmethod
+    def from_npz(cls, file: str | os.PathLike[str] | BinaryIO) -> UMAPModel:
+        """Load a model written by :meth:`to_npz`. If the file was written by an incompatible
+        release the error names both format versions rather than failing obscurely."""
+        with np.load(file, allow_pickle=False) as data:
+            written = int(data["format_version"])
+            if written != _MODEL_FORMAT:
+                raise ValueError(
+                    f"UMAPModel .npz is format {written}; this fastumap reads format "
+                    f"{_MODEL_FORMAT} — re-save the model with a matching version."
+                )
+            scalars = data["scalars"]
+            ints = data["ints"]
+            has_pca = bool(data["has_pca"])
+            return cls(
+                train=np.ascontiguousarray(data["train"], dtype=np.float32),
+                embedding=np.ascontiguousarray(data["embedding"], dtype=np.float64),
+                a=float(scalars[0]),
+                b=float(scalars[1]),
+                n_neighbors=int(ints[0]),
+                dimensions=int(ints[1]),
+                metric=str(data["metric"]),
+                random_state=int(ints[2]),
+                negative_sample_rate=int(ints[3]),
+                n_features=int(ints[4]),
+                pca_mean=np.ascontiguousarray(data["pca_mean"], dtype=np.float64)
+                if has_pca
+                else None,
+                pca_components=(
+                    np.ascontiguousarray(data["pca_components"], dtype=np.float64)
+                    if has_pca
+                    else None
+                ),
+            )
+
 
 @with_blas_limit
 def fit(
@@ -99,13 +164,16 @@ def fit(
     chunk_count: int = 1,
     pca_dim: int | None = None,
     knn: str = "auto",
+    init: FloatArray | None = None,
 ) -> UMAPModel:
     """Fit a UMAP layout and return a :class:`UMAPModel` (use ``.embedding`` for the coords).
 
     Deterministic given ``random_state``. See :func:`umap_project` for the parameters.
     ``pca_dim`` (default ``None`` = off) pre-reduces the input to that many principal
     components before the kNN, which speeds up high-dimensional inputs; ``transform``
-    projects new points through the same basis.
+    projects new points through the same basis. ``init`` overrides the spectral start with a
+    given ``(n, dimensions)`` embedding — pass the previous view's coordinates so a refreshed
+    layout stays comparable instead of rotating or reflecting; place any new rows yourself.
     """
     x = _validate(matrix, dimensions)
     n, n_features = x.shape
@@ -119,11 +187,16 @@ def fit(
     knn_indices, knn_dists = knn_graph(work, k, metric=metric, mode=knn)
     graph = fuzzy_simplicial_set(knn_indices, knn_dists)
     rng = np.random.default_rng(random_state)
-    init = spectral_layout(graph, dimensions, rng=rng)
+    if init is not None:
+        if init.shape != (n, dimensions):
+            raise ValueError(f"init must have shape ({n}, {dimensions}), got {tuple(init.shape)}")
+        start = np.ascontiguousarray(init, dtype=np.float64)
+    else:
+        start = spectral_layout(graph, dimensions, rng=rng)
     a, b = find_ab_params(spread, min_dist)
     epochs = _default_epochs(n) if n_epochs is None else n_epochs
     embedding = optimize_layout(
-        init,
+        start,
         graph,
         epochs,
         a=a,
@@ -165,6 +238,7 @@ def umap_project(
     chunk_count: int = 1,
     pca_dim: int | None = None,
     knn: str = "auto",
+    init: FloatArray | None = None,
 ) -> FloatArray:
     """Project ``matrix`` (n_samples, n_features) into ``dimensions`` (2 or 3).
 
@@ -188,16 +262,44 @@ def umap_project(
         chunk_count=chunk_count,
         pca_dim=pca_dim,
         knn=knn,
+        init=init,
     ).embedding
 
 
+@overload
+def transform(
+    model: UMAPModel,
+    matrix: FloatArray,
+    *,
+    n_epochs: int | None = ...,
+    return_distances: Literal[False] = ...,
+) -> FloatArray: ...
+@overload
+def transform(
+    model: UMAPModel,
+    matrix: FloatArray,
+    *,
+    n_epochs: int | None = ...,
+    return_distances: Literal[True],
+) -> tuple[FloatArray, FloatArray]: ...
 @with_blas_limit
-def transform(model: UMAPModel, matrix: FloatArray, *, n_epochs: int | None = None) -> FloatArray:
+def transform(
+    model: UMAPModel,
+    matrix: FloatArray,
+    *,
+    n_epochs: int | None = None,
+    return_distances: bool = False,
+) -> FloatArray | tuple[FloatArray, FloatArray]:
     """Place new points into ``model``'s existing layout without refitting it.
 
     New points are attracted to their nearest neighbours in the training set and repelled
     from random training points; the training layout stays fixed, so the picture is stable
     across calls. Deterministic given the model and input. Returns ``(n_new, dimensions)``.
+
+    With ``return_distances=True`` also returns, per new point, the distance to its nearest
+    training neighbour — a per-point measure of fit. Watch it against the training set's own
+    mean nearest-neighbour distance: points landing 2-3x further out are extrapolations, and a
+    rising batch mean is the signal to refit (see the README).
     """
     new_x = _validate(matrix, model.dimensions)
     if new_x.shape[1] != model.n_features:
@@ -226,7 +328,7 @@ def transform(model: UMAPModel, matrix: FloatArray, *, n_epochs: int | None = No
     init = _weighted_average_init(rows, cols, data, model.embedding, n_new, model.dimensions)
     epochs = max(30, _default_epochs(n_train) // 3) if n_epochs is None else n_epochs
     rng = np.random.default_rng(model.random_state)
-    return optimize_transform(
+    coords = optimize_transform(
         init,
         model.embedding,
         rows,
@@ -238,6 +340,10 @@ def transform(model: UMAPModel, matrix: FloatArray, *, n_epochs: int | None = No
         rng=rng,
         negative_sample_rate=model.negative_sample_rate,
     )
+    if return_distances:
+        # knn_dists is sorted ascending, so column 0 is the nearest training neighbour.
+        return coords, np.ascontiguousarray(knn_dists[:, 0])
+    return coords
 
 
 def _weighted_average_init(
