@@ -12,23 +12,24 @@ umap-learn is excellent, but its kernels are numba, and numba compiles with LLVM
 That is the whole thesis: **the problem is not numba, it is compilation at import time**,
 and a vectorised numpy implementation avoids it without giving up much quality.
 
-## Why this exists — the incident
+## Why this exists — import cost on constrained infra
 
-The first consumer is an internal ML-platform API on AWS Fargate: **0.5 vCPU, 4 granian
-workers, 2 GB**, shared with a Datadog sidecar. Every worker pays every import, and the
-cgroup meters CPU, so four numba compilations run through a half-vCPU straw at once:
+The target is a small, CPU-throttled container — the common serverless shape: a fraction of
+a vCPU, a handful of workers, a couple of GB, and a health check that starts polling within
+seconds of boot. Every worker pays every import, and the cgroup meters CPU, so several numba
+compilations run through a fractional-vCPU straw at once:
 
-- `from umap import UMAP` cost ~4.1 CPU-seconds; `pynndescent` alone declares 46
+- `from umap import UMAP` costs ~4.1 CPU-seconds to import; `pynndescent` alone declares 46
   eagerly-compiled `@njit` functions.
-- In that container the import took **148 s wall** (126 s and 206 s on two Fargate tasks).
-  The health check kills the container at ~120 s, so the service crash-looped and **never
-  served a request**. At 1 CPU it was 37.8 s, at 2 CPUs 16.1 s — compilation is serial, so
-  more cores barely help.
-- Baking a numba cache into the image did not fix it (11.9 s vs 12.0 s): the eager-signature
+- Metered through a **0.5 vCPU, 4-worker** cgroup, that import measures **~148 s of wall
+  clock** — past a typical ~120 s health-check window, so the container is killed before it
+  serves a request. At 1 CPU it is 37.8 s, at 2 CPUs 16.1 s: compilation is serial, so more
+  cores barely help.
+- Baking a numba cache into the image does not fix it (11.9 s vs 12.0 s): the eager-signature
   functions that dominate import have no `cache=True`.
 - `NUMBA_DISABLE_JIT=1` works but the pure-Python kernels are ~100× slower.
 
-fastumap imports in ~12 ms, four times over, and leaves the health-check budget intact.
+fastumap imports in ~12 ms, on every worker, and leaves the health-check budget intact.
 
 ## Quality vs umap-learn
 
@@ -88,8 +89,8 @@ pynndescent — the case the approximate-kNN backend (roadmap #15) addresses.
 
 ### The per-call trade at 1024 dimensions
 
-At the production shape — 1024-dim, n=5000 — fastumap is roughly **2× slower per call** than
-umap-learn, measured inside a 0.5-vCPU container (umap-learn ~22 s vs fastumap ~38–53 s).
+At a common embedding shape — 1024-dim, n=5000 — fastumap is roughly **2× slower per call**
+than umap-learn, measured inside a 0.5-vCPU container (umap-learn ~22 s vs fastumap ~38–53 s).
 That is inherent, not a missing optimisation: the **layout SGD dominates** wall-clock, and a
 pure-numpy vectorised SGD cannot match umap-learn's numba-compiled in-place optimiser
 (`pca_dim` trims only the kNN share, ~9%; the O(n²) part is roadmap #15).
@@ -231,7 +232,7 @@ make tox       # the suite across Python 3.11 / 3.12 / 3.13 (uv provisions each)
 make fargate   # import + fit timing under a Fargate-like cap: docker --cpus=0.5 --memory=2g
 ```
 
-`make fargate` reproduces the production constraint — `--cpus` is a CFS quota (throttles
+`make fargate` reproduces the serverless constraint — `--cpus` is a CFS quota (throttles
 total CPU-time, like Fargate's cgroup), so the import cost and per-call time it prints mean
 what they will on 0.5 vCPU. `CPUS=1 MEM=3g make fargate` (via `bench/fargate.sh`) tries other
 shapes, e.g. a Lambda size.
