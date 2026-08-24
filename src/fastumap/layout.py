@@ -36,6 +36,7 @@ def accelerator_active() -> bool:
     """
     return _accel_optimize is not None
 
+
 _GRID_SPACING = 3.0
 _SCALE = 10.0
 _INIT_NOISE = 1e-4
