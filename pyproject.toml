@@ -3,7 +3,7 @@
 # numba, which compiles with LLVM the first time you import it (seconds on a laptop, minutes on
 # a small box). numpy + scipy ship precompiled, so this imports in milliseconds instead.
 name = "fastumap"
-version = "0.1.19"
+version = "0.1.20"
 description = "UMAP in pure numpy and scipy, so importing it takes milliseconds instead of seconds."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -45,6 +45,12 @@ dependencies = [
 # wheel so the base package can stay pure numpy + scipy (no compiled code, installs anywhere).
 # fastumap uses the accelerator automatically when it is importable, else the numpy path.
 accel = ["fastumap-accel>=0.1.0"]
+# `pip install fastumap[ann]` adds an approximate kNN backend for inputs above ~10k points,
+# where the exact O(n^2) kNN dominates. faiss-cpu (Meta) is HNSW under the hood and — unlike
+# hnswlib, which is sdist-only and compiles on the machine — ships abi3 wheels for manylinux
+# x86_64/aarch64, macOS, musllinux and Windows, so it installs without a compiler (which is the
+# whole point of this library). The base install stays pure numpy+scipy; exact is the default.
+ann = ["faiss-cpu>=1.8"]
 # docs are an *extra* (installable via pip) so a docs site can build them.
 docs = [
     "mkdocs>=1.6",
@@ -80,6 +86,7 @@ dev = [
     "psutil>=5.9",
     "tox>=4.11",
     "tox-uv>=1.11",
+    "faiss-cpu>=1.8",   # exercise the approximate-kNN path (the fastumap[ann] backend) in tests
 ]
 
 [tool.ruff]

@@ -17,6 +17,7 @@ __all__ = [
     "UMAPModel",
     "__version__",
     "accelerator_active",
+    "ann_available",
     "fit",
     "global_distance_correlation",
     "neighbor_overlap",
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
 
     from .layout import accelerator_active
     from .metrics import global_distance_correlation, neighbor_overlap, random_layout
+    from .neighbors import ann_available
     from .projection import UMAPModel, fit, spectral_project, transform, umap_project
 
 
@@ -57,4 +59,8 @@ def __getattr__(name: str) -> object:
         from . import layout
 
         return layout.accelerator_active
+    if name == "ann_available":
+        from . import neighbors
+
+        return neighbors.ann_available
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

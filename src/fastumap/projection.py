@@ -17,7 +17,7 @@ from .graph import (
     smooth_knn_dist,
 )
 from .layout import optimize_layout, optimize_transform, spectral_layout
-from .neighbors import knn, knn_between
+from .neighbors import knn_between, knn_graph
 
 
 def _default_epochs(n: int) -> int:
@@ -98,6 +98,7 @@ def fit(
     metric: str = "euclidean",
     chunk_count: int = 1,
     pca_dim: int | None = None,
+    knn: str = "auto",
 ) -> UMAPModel:
     """Fit a UMAP layout and return a :class:`UMAPModel` (use ``.embedding`` for the coords).
 
@@ -115,7 +116,7 @@ def fit(
         work, pca_mean, pca_components = _pca_reduce(x, pca_dim)
     k = min(n_neighbors, n)
 
-    knn_indices, knn_dists = knn(work, k, metric=metric)
+    knn_indices, knn_dists = knn_graph(work, k, metric=metric, mode=knn)
     graph = fuzzy_simplicial_set(knn_indices, knn_dists)
     rng = np.random.default_rng(random_state)
     init = spectral_layout(graph, dimensions, rng=rng)
@@ -163,6 +164,7 @@ def umap_project(
     metric: str = "euclidean",
     chunk_count: int = 1,
     pca_dim: int | None = None,
+    knn: str = "auto",
 ) -> FloatArray:
     """Project ``matrix`` (n_samples, n_features) into ``dimensions`` (2 or 3).
 
@@ -185,6 +187,7 @@ def umap_project(
         metric=metric,
         chunk_count=chunk_count,
         pca_dim=pca_dim,
+        knn=knn,
     ).embedding
 
 
@@ -263,6 +266,7 @@ def spectral_project(
     random_state: int = 42,
     metric: str = "euclidean",
     pca_dim: int | None = None,
+    knn: str = "auto",
 ) -> FloatArray:
     """Just the spectral initialisation: kNN graph, fuzzy set, spectral embedding.
 
@@ -275,7 +279,7 @@ def spectral_project(
     if pca_dim is not None and n_features > pca_dim:
         work, _mean, _components = _pca_reduce(x, pca_dim)
     k = min(n_neighbors, n)
-    knn_indices, knn_dists = knn(work, k, metric=metric)
+    knn_indices, knn_dists = knn_graph(work, k, metric=metric, mode=knn)
     graph = fuzzy_simplicial_set(knn_indices, knn_dists)
     rng = np.random.default_rng(random_state)
     return spectral_layout(graph, dimensions, rng=rng)

@@ -19,6 +19,7 @@ left to compile at import time.
 ```bash
 pip install fastumap                 # NumPy and SciPy only
 pip install fastumap[accel]          # adds the optional native accelerator (see below)
+pip install fastumap[ann]            # adds an approximate kNN backend for large inputs (see below)
 ```
 
 ## Usage
@@ -54,7 +55,7 @@ global structure. Measured on MNIST (784-dimensional, single-threaded, `make ben
 | 20000 | umap-learn | 31 s | 0.205 | 0.316 |
 
 fastumap is faster at 5k and 10k and slower at 20k, where its exact O(n²) neighbour search
-becomes the bottleneck; an approximate backend for larger inputs is planned. umap-learn's times
+becomes the bottleneck (`pip install fastumap[ann]` addresses this — see below). umap-learn's times
 reuse the numba compilation from its first fit — a fresh process pays roughly 20 s of
 compilation on every invocation. Raising `chunk_count` (default 1) recovers most of the
 remaining local-overlap gap at proportional cost and stays deterministic.
@@ -118,13 +119,35 @@ import fastumap
 fastumap.accelerator_active()   # True if the native kernel is installed and will be used
 ```
 
-## Reproducibility
+## Large inputs (approximate kNN)
+
+The exact neighbour search is O(n²) and dominates runtime above ~20k points. `pip install
+fastumap[ann]` adds an approximate backend — [faiss](https://faiss.ai) HNSW, which ships
+prebuilt wheels (Linux x86_64/aarch64, macOS, Windows), so it installs without a compiler.
+
+```python
+xy = umap_project(x, 2, knn="auto")   # default: exact for small n, approximate above 16k
+xy = umap_project(x, 2, knn="approx") # force approximate (needs fastumap[ann])
+xy = umap_project(x, 2, knn="exact")  # force the exact brute force
+```
+
+`"auto"` (the default) only switches to approximate when the extra is installed *and* n ≥
+16384, so small inputs stay bit-identical. It's deterministic and keeps ≥0.86 neighbour recall
+against exact. Measured on the neighbour search alone (256-dim):
+
+| n | exact | approx | speedup | recall@15 |
+|---|---:|---:|---:|---:|
+| 20000 | 71 s | 29 s | **2.4×** | 0.91 |
+| 30000 | 142 s | 50 s | **2.8×** | 0.86 |
+
+`fastumap.ann_available()` reports whether the backend is installed.
 
 For a given input and seed, output is bit-identical across processes and machines within one
-environment. Because the accelerator changes the layout, reproducibility *across* environments
-requires pinning whether `fastumap-accel` is installed — treat it as part of the environment's
-dependency set. `accelerator_active()` reports which path a run used, so a stored projection can
-record how it was produced.
+environment. Two optional packages change the layout, so reproducibility *across* environments
+requires pinning them: `fastumap-accel` (a different optimiser) and `fastumap[ann]` (an
+approximate neighbour graph above 16k points). Treat them as part of the environment's
+dependency set; `accelerator_active()` and `ann_available()` report which paths a run used, so a
+stored projection can record how it was produced.
 
 ## Guarantees
 

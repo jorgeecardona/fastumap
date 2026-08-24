@@ -14,11 +14,18 @@ which is what ``transform`` needs to place new points against a fitted training 
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 from collections.abc import Callable
 
 import numpy as np
 
 from ._types import FloatArray, IntArray
+
+# Below this many points the exact blocked kNN is still fast (and bit-identical), so `knn="auto"`
+# keeps it; above it the O(n^2) kNN dominates and approximate wins clearly (measured ~2.4x at
+# 20k, ~2.8x at 30k), so auto switches to the fastumap[ann] backend when it is installed.
+_ANN_MIN = 16384
 
 
 def _knn_from_tiles(
@@ -141,3 +148,78 @@ def knn_between(
 
         return _knn_from_tiles(n_q, n_r, n_neighbors, block_size, tile)
     raise ValueError(f"unknown metric {metric!r}; use 'euclidean' or 'cosine'")
+
+
+def ann_available() -> bool:
+    """Whether the approximate-kNN backend (``pip install fastumap[ann]`` → faiss) is present."""
+    return importlib.util.find_spec("faiss") is not None
+
+
+def knn_approx(
+    matrix: FloatArray,
+    n_neighbors: int,
+    *,
+    metric: str = "euclidean",
+    m: int = 16,
+    ef_construction: int = 200,
+) -> tuple[IntArray, FloatArray]:
+    """Approximate self-kNN via faiss HNSW, for inputs where exact O(n^2) is too slow.
+
+    Output matches the exact path's contract: euclidean distance for ``"euclidean"``,
+    ``1 - cosine similarity`` for ``"cosine"``, self in column 0 (distance 0), nearest first.
+    Deterministic run-to-run (single-threaded build). Requires ``pip install fastumap[ann]``;
+    raises :class:`ImportError` with that hint otherwise.
+    """
+    if metric == "cosine":
+        data = _unit_rows(matrix)  # squared-L2 on unit rows = 2*(1 - cos), so cosine dist = d2/2
+    elif metric == "euclidean":
+        data = matrix
+    else:
+        raise ValueError(f"unknown metric {metric!r}; use 'euclidean' or 'cosine'")
+
+    try:
+        faiss = importlib.import_module("faiss")  # dynamic: no stubs, optional at runtime
+    except ImportError as exc:  # pragma: no cover - exercised via the dispatcher's error path
+        raise ImportError(
+            "approximate kNN needs the faiss backend; install it with `pip install fastumap[ann]`"
+        ) from exc
+
+    faiss.omp_set_num_threads(1)  # single-threaded build + search -> deterministic
+    contiguous = np.ascontiguousarray(data, dtype=np.float32)
+    dim = contiguous.shape[1]
+    index = faiss.IndexHNSWFlat(dim, m)  # L2 space
+    index.hnsw.efConstruction = ef_construction
+    index.add(contiguous)
+    index.hnsw.efSearch = max(ef_construction, n_neighbors + 1)
+    d2, labels = index.search(contiguous, n_neighbors)  # squared L2, ascending; self at col 0
+
+    indices: IntArray = labels.astype(np.int64)
+    d2_pos = np.maximum(d2.astype(np.float64), 0.0)
+    distances = np.sqrt(d2_pos) if metric == "euclidean" else d2_pos / 2.0
+    return indices, distances
+
+
+def knn_graph(
+    matrix: FloatArray,
+    n_neighbors: int,
+    *,
+    metric: str = "euclidean",
+    mode: str = "auto",
+    block_size: int = 512,
+) -> tuple[IntArray, FloatArray]:
+    """Self-kNN, exact or approximate per ``mode``.
+
+    ``"exact"`` always uses the blocked brute force (bit-identical, the default). ``"approx"``
+    always uses the faiss HNSW backend (errors if ``fastumap[ann]`` is absent). ``"auto"`` uses
+    approximate only when the backend is installed *and* ``n >= 16384`` — otherwise exact, so
+    small inputs stay bit-identical and nothing changes unless you opted into the extra.
+    """
+    if mode == "exact":
+        return knn(matrix, n_neighbors, metric=metric, block_size=block_size)
+    if mode == "approx":
+        return knn_approx(matrix, n_neighbors, metric=metric)
+    if mode == "auto":
+        if matrix.shape[0] >= _ANN_MIN and ann_available():
+            return knn_approx(matrix, n_neighbors, metric=metric)
+        return knn(matrix, n_neighbors, metric=metric, block_size=block_size)
+    raise ValueError(f"unknown knn mode {mode!r}; use 'auto', 'exact', or 'approx'")
