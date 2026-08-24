@@ -3,7 +3,7 @@
 # numba, which compiles with LLVM the first time you import it (seconds on a laptop, minutes on
 # a small box). numpy + scipy ship precompiled, so this imports in milliseconds instead.
 name = "fastumap"
-version = "0.1.14"
+version = "0.1.15"
 description = "UMAP in pure numpy and scipy, so importing it takes milliseconds instead of seconds."
 readme = "README.md"
 requires-python = ">=3.11"

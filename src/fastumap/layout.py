@@ -178,7 +178,8 @@ def optimize_layout(
         t = tail[edge_idx]
         delta = np.zeros_like(positions)
 
-        diff = positions[h] - positions[t]
+        pos_h = positions[h]  # gathered once; reused by attraction and every repulsion draw
+        diff = pos_h - positions[t]
         d2: FloatArray = np.einsum("ij,ij->i", diff, diff)
         attract_coeff = np.zeros_like(d2)
         nonzero = d2 > 0.0
@@ -190,9 +191,13 @@ def optimize_layout(
         _scatter_add(delta, h, grad)
         _scatter_add(delta, t, -grad)
 
-        for _sample in range(negative_sample_rate):
-            k_samp: IntArray = rng.integers(0, n_vertices, size=edge_idx.shape[0])
-            diff_n = positions[h] - positions[k_samp]
+        # One blocked draw instead of negative_sample_rate sequential ones: PCG64 fills the
+        # (rate, m) buffer in the same stream order, so the samples are bit-identical.
+        samples: IntArray = rng.integers(
+            0, n_vertices, size=(negative_sample_rate, edge_idx.shape[0])
+        )
+        for k_samp in samples:
+            diff_n = pos_h - positions[k_samp]
             d2n: FloatArray = np.einsum("ij,ij->i", diff_n, diff_n)
             repel_coeff = np.zeros_like(d2n)
             positive = d2n > 0.0
@@ -220,13 +225,13 @@ def optimize_layout(
             continue
 
         if chunk_count <= 1:
-            emb = emb + edge_delta(due, emb, alpha)
+            emb += edge_delta(due, emb, alpha)  # in place: no fresh (n, dim) alloc per epoch
         else:
             shuffled = due[rng.permutation(due.shape[0])]
             for chunk in np.array_split(shuffled, chunk_count):
                 if chunk.shape[0] == 0:
                     continue
-                emb = emb + edge_delta(chunk, emb, alpha)
+                emb += edge_delta(chunk, emb, alpha)
 
         epoch_of_next[due] += epochs_per_sample[due]
 
@@ -271,7 +276,8 @@ def optimize_transform(
         t = tail[due]
         delta = np.zeros_like(emb)
 
-        diff = emb[h] - ref[t]
+        emb_h = emb[h]  # gathered once; reused by attraction and every repulsion draw
+        diff = emb_h - ref[t]
         d2: FloatArray = np.einsum("ij,ij->i", diff, diff)
         attract_coeff = np.zeros_like(d2)
         nonzero = d2 > 0.0
@@ -282,9 +288,11 @@ def optimize_transform(
         grad = np.clip(attract_coeff[:, None] * diff, -_GRAD_CLIP, _GRAD_CLIP) * alpha
         _scatter_add(delta, h, grad)  # only the new points move; ref is frozen
 
-        for _sample in range(negative_sample_rate):
-            k_samp: IntArray = rng.integers(0, n_ref, size=due.shape[0])
-            diff_n = emb[h] - ref[k_samp]
+        # One blocked draw instead of negative_sample_rate sequential ones: PCG64 fills the
+        # (rate, m) buffer in the same stream order, so the samples are bit-identical.
+        samples: IntArray = rng.integers(0, n_ref, size=(negative_sample_rate, due.shape[0]))
+        for k_samp in samples:
+            diff_n = emb_h - ref[k_samp]
             d2n: FloatArray = np.einsum("ij,ij->i", diff_n, diff_n)
             repel_coeff = np.zeros_like(d2n)
             positive = d2n > 0.0
