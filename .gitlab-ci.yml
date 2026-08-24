@@ -98,6 +98,8 @@ accel:
     # aarch64/Graviton via zig cross-compile. Best-effort: a cross-compile failure must NOT
     # block the x86_64 publish below (that is what silently skipped the publish before).
     - maturin build --release --zig --target aarch64-unknown-linux-gnu -m rust/Cargo.toml -o dist-accel || echo "aarch64 cross-compile failed; publishing x86_64 only"
+    # Source dist so macOS / other arches can build+install with a Rust toolchain (#8).
+    - maturin sdist -m rust/Cargo.toml -o dist-accel
     # On main: publish whatever wheels are in dist-accel to PyPI via OIDC (idempotent; skips
     # if the version is already up). The fastumap-accel pending publisher trusts this job.
     - |
