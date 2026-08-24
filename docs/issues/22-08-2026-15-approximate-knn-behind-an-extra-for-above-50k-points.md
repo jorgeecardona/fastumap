@@ -30,3 +30,17 @@ backend "behind an extra" is one of:
 
 Recommendation: A (hnswlib behind an extra) — it matches "keep the base pure numpy+scipy"
 and actually beats O(n^2). Left OPEN pending that call. Not started in code.
+
+## Update 2026-08-24 — float32 kNN folded in here (from GitLab #6, closed)
+
+GitLab #6 proposed a float32 exact kNN (~1.6x faster, but ~2% near-tie neighbor flips).
+Jorge's call: DON'T add it as a standalone dtype knob — fold it into this issue, because
+float32 only pays off above ~10k, which is exactly the regime this approximate backend
+replaces. Research notes for whoever builds A/B:
+  - float32 is the ecosystem norm for ANN (faiss/hnswlib/pynndescent all store+search in
+    float32), and umap-learn's own graph via pynndescent is only ~90% exact anyway — so an
+    approximate float32 backend is doubly fine; exactness is a false standard here.
+  - Do NOT do a "float32 matmul + float64 norm accumulation" hybrid for an EXACT path: it
+    doesn't bound the cancellation (sgemm still accumulates a·b in float32). sklearn upcasts
+    the whole chunk to float64 (issue 9354 / PR 13554) — which our current blocked kNN
+    already does. If option B (pure-numpy) is ever built exact, keep it float64.
