@@ -1,9 +1,10 @@
 ---
 title: "#15 Approximate kNN behind an extra, for above ~50k points"
-status: open
+status: done
 area: capability
 owner: null
 filed: 2026-08-22
+fixed_in: 7003da6
 scope: L
 verify: test
 ---

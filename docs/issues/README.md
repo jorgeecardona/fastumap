@@ -64,9 +64,5 @@ cabildo issues show <slug>
 ## Open now
 
 <!-- BEGIN GENERATED INDEX — `cabildo issues reindex` -->
-| Issue | Area | Scope | Verify | Status | Waiting on |
-|---|---|---|---|---|---|
-| [#15 Approximate kNN behind an extra, for above ~50k points](22-08-2026-15-approximate-knn-behind-an-extra-for-above-50k-points.md) | capability | L | test | open | — |
-
-_1 open — 1 open; 18 done. Generated; edit the files, then `cabildo issues reindex`._
+_No open follow-ups._
 <!-- END GENERATED INDEX -->
