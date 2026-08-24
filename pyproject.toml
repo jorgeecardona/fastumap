@@ -1,10 +1,10 @@
 [project]
-# fastumap — a numba-free UMAP. The reason it exists is import cost: umap-learn's
-# kernels are numba, which compiles with LLVM at import time (~4s CPU, 172MB of wheels).
-# fastumap is pure numpy+scipy, which ship precompiled kernels and import in milliseconds.
+# fastumap — a small UMAP in pure numpy + scipy. I wrote it because umap-learn's kernels are
+# numba, which compiles with LLVM the first time you import it (seconds on a laptop, minutes on
+# a small box). numpy + scipy ship precompiled, so this imports in milliseconds instead.
 name = "fastumap"
-version = "0.1.13"
-description = "A numba-free UMAP in pure numpy + scipy: imports in milliseconds, no LLVM/JIT at runtime."
+version = "0.1.14"
+description = "UMAP in pure numpy and scipy, so importing it takes milliseconds instead of seconds."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -37,7 +37,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# docs are an *extra* (installable via pip) so GitLab Pages / RTD can build them.
+# `pip install fastumap[accel]` adds the optional native SGD kernel, which lives in its own
+# wheel so the base package can stay pure numpy + scipy (no compiled code, installs anywhere).
+# fastumap uses the accelerator automatically when it is importable, else the numpy path.
+accel = ["fastumap-accel>=0.1.0"]
+# docs are an *extra* (installable via pip) so a docs site can build them.
 docs = [
     "mkdocs>=1.6",
     "mkdocs-material>=9.5",

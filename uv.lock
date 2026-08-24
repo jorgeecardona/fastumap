@@ -225,7 +225,7 @@ wheels = [
 
 [[package]]
 name = "fastumap"
-version = "0.1.13"
+version = "0.1.14"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -235,6 +235,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+accel = [
+    { name = "fastumap-accel" },
+]
 docs = [
     { name = "mkdocs" },
     { name = "mkdocs-material" },
@@ -255,13 +258,14 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fastumap-accel", marker = "extra == 'accel'", specifier = ">=0.1.0" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6" },
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.27" },
     { name = "numpy", specifier = ">=1.24" },
     { name = "scipy", specifier = ">=1.10" },
 ]
-provides-extras = ["docs"]
+provides-extras = ["accel", "docs"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -273,6 +277,15 @@ dev = [
     { name = "tox", specifier = ">=4.11" },
     { name = "tox-uv", specifier = ">=1.11" },
     { name = "umap-learn", specifier = ">=0.5" },
+]
+
+[[package]]
+name = "fastumap-accel"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/79/de/6fb94a944f3563a720c736b6e1e9babf0c11eb0185cb68622aeab6f5ba02/fastumap_accel-0.1.0-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f4cedad7e9a8451c5b7834ca150cfeaf7d1bdd007a1f473e8b4256003f3070db", size = 217143, upload-time = "2026-08-24T05:35:11.142Z" },
+    { url = "https://files.pythonhosted.org/packages/12/6e/5d6966b5d7b8e73e1069248aa5f582997aabd88aa7345f7840ecb21d3685/fastumap_accel-0.1.0-cp311-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:4265c8b228184642a2024b6aab6675db390323ed34ab3908f6f1b64c53d6f810", size = 214252, upload-time = "2026-08-24T05:35:12.247Z" },
 ]
 
 [[package]]
