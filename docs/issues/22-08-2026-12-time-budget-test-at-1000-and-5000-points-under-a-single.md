@@ -1,9 +1,10 @@
 ---
 title: "#12 Time-budget test at 1000 and 5000 points under a single-core cap"
-status: open
+status: done
 area: production
 owner: null
 filed: 2026-08-22
+fixed_in: 3f054f9
 scope: M
 verify: test
 ---

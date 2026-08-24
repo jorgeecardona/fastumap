@@ -1,9 +1,10 @@
 ---
 title: "#18 Publish to PyPI (OIDC Trusted Publishing), independent-reimplementation notice"
-status: open
+status: done
 area: release
 owner: null
 filed: 2026-08-22
+fixed_in: c3d6cac
 scope: M
 verify: probe
 ---

@@ -1,9 +1,10 @@
 ---
 title: "#9 Memory ceiling test: peak RSS at 5000x1024 under a stated bound"
-status: open
+status: done
 area: production
 owner: null
 filed: 2026-08-22
+fixed_in: 9a536f6
 scope: S
 verify: test
 ---

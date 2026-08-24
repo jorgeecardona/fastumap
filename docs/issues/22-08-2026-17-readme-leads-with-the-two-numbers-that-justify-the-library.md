@@ -1,9 +1,10 @@
 ---
 title: "#17 README leads with the two numbers that justify the library"
-status: open
+status: done
 area: release
 owner: null
 filed: 2026-08-22
+fixed_in: cdea6f9
 scope: S
 verify: inspect
 ---

@@ -1,9 +1,10 @@
 ---
 title: "#7 Real-data benchmark: MNIST + Fashion-MNIST via cached downloader"
-status: open
+status: done
 area: quality
 owner: null
 filed: 2026-08-22
+fixed_in: c451001
 scope: M
 verify: test
 ---

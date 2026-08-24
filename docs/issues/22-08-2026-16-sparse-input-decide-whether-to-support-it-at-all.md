@@ -1,9 +1,10 @@
 ---
 title: "#16 Sparse input: decide whether to support it at all"
-status: open
+status: done
 area: capability
 owner: null
 filed: 2026-08-22
+fixed_in: abec612
 scope: S
 verify: inspect
 ---

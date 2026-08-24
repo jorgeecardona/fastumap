@@ -1,9 +1,10 @@
 ---
 title: "#6 Partial in-epoch feedback (shuffled chunks) in the optimiser"
-status: open
+status: done
 area: quality
 owner: null
 filed: 2026-08-22
+fixed_in: 35570e3
 scope: M
 verify: test
 ---

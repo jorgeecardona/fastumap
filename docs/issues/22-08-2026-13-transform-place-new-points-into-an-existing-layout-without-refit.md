@@ -1,9 +1,10 @@
 ---
 title: "#13 transform(): place new points into an existing layout without refit"
-status: open
+status: done
 area: capability
 owner: null
 filed: 2026-08-22
+fixed_in: c555a18
 scope: L
 verify: test
 ---

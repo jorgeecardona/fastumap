@@ -1,9 +1,10 @@
 ---
 title: "#19 Speed up the SGD scatter (np.add.at dominates wall-clock)"
-status: open
+status: done
 area: production
 owner: null
 filed: 2026-08-23
+fixed_in: 017a0c0
 scope: M
 verify: test
 ---

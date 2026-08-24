@@ -1,9 +1,10 @@
 ---
 title: "#14 Cosine metric (the one that matters for text embeddings)"
-status: open
+status: done
 area: capability
 owner: null
 filed: 2026-08-22
+fixed_in: 6c3a41f
 scope: M
 verify: test
 ---

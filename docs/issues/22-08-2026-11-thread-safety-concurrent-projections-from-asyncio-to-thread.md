@@ -1,9 +1,10 @@
 ---
 title: "#11 Thread safety: concurrent projections from asyncio.to_thread"
-status: open
+status: done
 area: production
 owner: null
 filed: 2026-08-22
+fixed_in: a649125
 scope: S
 verify: test
 ---

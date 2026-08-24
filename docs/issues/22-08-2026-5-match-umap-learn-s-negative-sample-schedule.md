@@ -1,9 +1,10 @@
 ---
 title: "#5 Match umap-learn's negative-sample schedule"
-status: open
+status: done
 area: quality
 owner: null
 filed: 2026-08-22
+fixed_in: 8d02639
 scope: S
 verify: test
 ---
