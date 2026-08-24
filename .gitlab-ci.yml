@@ -86,15 +86,20 @@ accel:
     - uv pip install maturin ziglang                # ziglang: maturin's cross-linker for --zig
   script:
     - . "$HOME/.cargo/env"
-    - .venv/bin/maturin develop --release -m rust/Cargo.toml
-    - .venv/bin/python -c "import fastumap_accel; print('fastumap_accel import ok')"
+    # Put the venv first on PATH: maturin's `--zig` finds the zig linker via `python3 -m
+    # ziglang`, and it must resolve to the venv python that has ziglang, not the system one.
+    - export PATH="$CI_PROJECT_DIR/.venv/bin:$PATH"
+    - maturin develop --release -m rust/Cargo.toml
+    - python -c "import fastumap_accel; print('fastumap_accel import ok')"
     # The accel is present, so this exercises the native optimize_layout path.
-    - VECLIB_MAXIMUM_THREADS=1 .venv/bin/python -m pytest tests/test_accel.py tests/test_projection.py tests/test_determinism.py tests/test_metrics.py -q
-    # abi3 wheels (cp311-abi3 = one wheel per arch, all Python 3.11+): x86_64 and aarch64.
-    - .venv/bin/maturin build --release -m rust/Cargo.toml -o dist-accel
-    - .venv/bin/maturin build --release --zig --target aarch64-unknown-linux-gnu -m rust/Cargo.toml -o dist-accel
-    # On main: publish the accelerator wheels to PyPI via OIDC (idempotent; skips if the
-    # version is already up). The fastumap-accel pending publisher trusts this job.
+    - VECLIB_MAXIMUM_THREADS=1 python -m pytest tests/test_accel.py tests/test_projection.py tests/test_determinism.py tests/test_metrics.py -q
+    # abi3 wheels (cp311-abi3 = one wheel per arch, all Python 3.11+).
+    - maturin build --release -m rust/Cargo.toml -o dist-accel                     # x86_64
+    # aarch64/Graviton via zig cross-compile. Best-effort: a cross-compile failure must NOT
+    # block the x86_64 publish below (that is what silently skipped the publish before).
+    - maturin build --release --zig --target aarch64-unknown-linux-gnu -m rust/Cargo.toml -o dist-accel || echo "aarch64 cross-compile failed; publishing x86_64 only"
+    # On main: publish whatever wheels are in dist-accel to PyPI via OIDC (idempotent; skips
+    # if the version is already up). The fastumap-accel pending publisher trusts this job.
     - |
       if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
         sh scripts/pypi-publish-accel
