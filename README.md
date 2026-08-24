@@ -1,28 +1,33 @@
 # fastumap
 
-UMAP in pure **numpy + scipy**. No numba, no LLVM, nothing that compiles when you import it.
+UMAP in pure **numpy + scipy**, built so that importing it costs almost nothing.
 
 | | cold import | added to image |
 |---|---:|---:|
 | `import umap` (umap-learn) | **~21 s** (laptop) · **148 s** (0.5 vCPU ×4) | ~172 MB |
 | `import fastumap` | **~12 ms** | 0 MB |
 
-**The whole idea:** the problem was never numba — it's that numba compiles at *import* time.
-numpy and scipy are just as compiled, but they ship **precompiled** in the wheel, so they load
-in milliseconds. Same math, no runtime JIT.
+That gap is the reason this library exists. umap-learn's kernels are numba, and numba compiles
+them with LLVM the first time you import it — seconds on a laptop, minutes on a small
+CPU-throttled container. Here's the catch: numpy and scipy are just as compiled underneath,
+they just ship **precompiled** in the wheel, so they load in milliseconds. So the fix isn't to
+drop compiled code — it's to stop compiling *at import time*. fastumap keeps the UMAP math and
+leaves nothing to JIT when it loads.
 
 ## Why import cost matters
 
-A small, CPU-throttled container — a fraction of a vCPU, a few workers, a health check
-polling from the first second:
+It bites hardest on a small, CPU-throttled container — a fraction of a vCPU, a few workers, a
+health check that polls from the first second. Every worker pays the import, so the compile
+stacks up fast:
 
-- `import umap` ≈ 4 CPU-seconds. `pynndescent` alone JIT-compiles 46 `@njit` functions.
-- Through a **0.5 vCPU, 4-worker** cgroup that's **~148 s** — past a ~120 s health check. The
-  container is killed before it serves one request.
-- More cores barely help (37.8 s at 1 CPU, 16.1 s at 2) — the compile is serial.
-- Numba cache? No help (eager signatures skip it). `NUMBA_DISABLE_JIT=1`? ~100× slower.
+- `import umap` ≈ 4 CPU-seconds, and `pynndescent` alone JIT-compiles 46 `@njit` functions.
+- Through a **0.5 vCPU, 4-worker** cgroup that becomes **~148 s** — past a ~120 s health
+  check, so the container is killed before it serves one request.
+- More cores barely help (37.8 s at 1 CPU, 16.1 s at 2), because the compile is serial.
+- A baked numba cache doesn't save you (eager signatures skip it), and `NUMBA_DISABLE_JIT=1`
+  runs ~100× slower.
 
-fastumap imports in **~12 ms**. That's the point.
+fastumap sidesteps all of it — it imports in **~12 ms**, on every worker.
 
 ## Quality vs umap-learn
 
