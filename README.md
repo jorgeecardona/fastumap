@@ -72,6 +72,13 @@ fastumap is therefore the appropriate choice when import and cold-start cost dom
 so when per-call latency on large, high-dimensional batches is the constraint. The optional
 accelerator narrows this gap.
 
+On a CPU-throttled container (a cgroup CFS quota below the host core count — Fargate, ECS,
+Lambda), fastumap caps its BLAS thread pool to the quota automatically. Otherwise an
+unconstrained pool sized to the host's core count oversubscribes the quota and thrashes under
+concurrent load: measured at 0.5 vCPU with four worker processes, per-call time is ~70 s
+uncapped versus ~43 s capped (≈1.6× faster). No configuration is required, and nothing is
+capped on an unconstrained host.
+
 ## Server usage
 
 `umap_project` is thread-safe — it holds no module-level mutable state and seeds a fresh RNG
@@ -123,8 +130,8 @@ record how it was produced.
 
 Each is enforced by a test:
 
-- **NumPy and SciPy only at runtime** — no numba, llvmlite, scikit-learn, or first-party
-  compiled code.
+- **No JIT or compiled stack at runtime** — NumPy, SciPy, and the small pure-Python
+  `threadpoolctl`; never numba, llvmlite, scikit-learn, or first-party compiled code.
 - **Import under 200 ms**, deterministic (bit-identical) output, and thread-safe.
 - **Bounded memory** — the full n×n distance matrix is never materialised (blocked kNN); under
   200 MB at 5000×1024.

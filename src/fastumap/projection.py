@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ._threads import with_blas_limit
 from ._types import Float32Array, FloatArray, IntArray
 from .graph import (
     compute_membership,
@@ -83,6 +84,7 @@ class UMAPModel:
     pca_components: FloatArray | None = None
 
 
+@with_blas_limit
 def fit(
     matrix: FloatArray,
     dimensions: int = 2,
@@ -186,6 +188,7 @@ def umap_project(
     ).embedding
 
 
+@with_blas_limit
 def transform(model: UMAPModel, matrix: FloatArray, *, n_epochs: int | None = None) -> FloatArray:
     """Place new points into ``model``'s existing layout without refitting it.
 

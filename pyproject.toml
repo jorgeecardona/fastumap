@@ -3,7 +3,7 @@
 # numba, which compiles with LLVM the first time you import it (seconds on a laptop, minutes on
 # a small box). numpy + scipy ship precompiled, so this imports in milliseconds instead.
 name = "fastumap"
-version = "0.1.18"
+version = "0.1.19"
 description = "UMAP in pure numpy and scipy, so importing it takes milliseconds instead of seconds."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -34,6 +34,10 @@ classifiers = [
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
+    # Pure-Python (no compiled code). Used only to cap BLAS threads to the container's CPU
+    # quota on a throttled host, so an oversubscribed thread pool can't thrash under load;
+    # imported lazily, so import cost and unconstrained-host runs are unaffected.
+    "threadpoolctl>=3.0",
 ]
 
 [project.optional-dependencies]
