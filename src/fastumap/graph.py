@@ -154,5 +154,9 @@ def make_epochs_per_sample(weights: FloatArray, n_epochs: int) -> FloatArray:
     result = np.full(weights.shape[0], -1.0, dtype=np.float64)
     n_samples = n_epochs * (weights / weights.max())
     positive = n_samples > 0.0
-    result[positive] = float(n_epochs) / n_samples[positive]
+    with np.errstate(over="ignore"):
+        result[positive] = float(n_epochs) / n_samples[positive]
+    # A denormal weight makes the reciprocal overflow to inf; fall back to the documented -1
+    # sentinel so the contract holds and we neither warn nor raise under np.seterr(all="raise").
+    result[~np.isfinite(result)] = -1.0
     return result
