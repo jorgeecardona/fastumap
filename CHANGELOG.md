@@ -5,6 +5,14 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-08-25
+
+### Added
+- musllinux wheels (Alpine / musl libc), x86_64 and aarch64, cross-built with zig alongside the
+  manylinux wheels. `pip install fastumap` now works on `python:*-alpine` images with no compiler,
+  instead of falling back to the sdist + a Rust toolchain. Best-effort in CI: a musl cross flake
+  cannot block the manylinux publish.
+
 ## [0.2.6] - 2026-08-25
 
 ### Fixed

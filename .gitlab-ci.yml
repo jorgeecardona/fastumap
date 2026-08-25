@@ -53,6 +53,7 @@ ci:
     - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
     - . "$HOME/.cargo/env"
     - rustup target add aarch64-unknown-linux-gnu   # Graviton / ARM
+    - rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl   # Alpine / musl libc
     - uv sync --frozen                    # builds fastumap (+ its _accel) via maturin, plus test deps
   script:
     - export PATH="$HOME/.proto/bin:$HOME/.proto/shims:$PATH"
@@ -73,6 +74,11 @@ ci:
     # aarch64/Graviton via zig cross-compile. Best-effort: an ARM cross-compile flake must NOT
     # block the x86_64 + sdist publish below.
     - .venv/bin/maturin build --release --zig --target aarch64-unknown-linux-gnu -m rust/Cargo.toml -o dist || echo "aarch64 cross-compile failed; publishing x86_64 + sdist only"
+    # musllinux (Alpine / musl libc) via zig, x86_64 + aarch64. Best-effort like the aarch64 gnu
+    # build: a musl cross flake must not block the manylinux publish. Lets `pip install fastumap`
+    # work on python:*-alpine images with no compiler.
+    - .venv/bin/maturin build --release --zig --target x86_64-unknown-linux-musl -m rust/Cargo.toml -o dist || echo "musllinux x86_64 cross-compile failed"
+    - .venv/bin/maturin build --release --zig --target aarch64-unknown-linux-musl -m rust/Cargo.toml -o dist || echo "musllinux aarch64 cross-compile failed"
     # Source dist so macOS / Windows / other arches can build+install with a Rust toolchain.
     - .venv/bin/maturin sdist -m rust/Cargo.toml -o dist
     # On main: publish dist/* to PyPI via OIDC (idempotent — a no-op if this version is already up).
