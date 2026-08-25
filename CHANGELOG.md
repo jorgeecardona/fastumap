@@ -5,6 +5,15 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-25
+
+### Fixed
+- CI: the aarch64/Graviton wheel is published again. The 0.2.0 pipeline's `--zig` cross-compile
+  failed with "Failed to find zig" because maturin runs `python3 -m ziglang` and, without the
+  venv first on `PATH`, that resolved to the system python (no ziglang); 0.2.0 shipped x86_64 +
+  sdist only. The job now puts `.venv/bin` first on `PATH` before the maturin builds, so the
+  aarch64 wheel builds and publishes as the README states.
+
 ## [0.2.0] - 2026-08-25
 
 ### Changed

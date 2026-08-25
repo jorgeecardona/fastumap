@@ -64,6 +64,10 @@ ci:
     # the venv to the lock and would evict these (they are not in the lock). ziglang is maturin's
     # cross-linker for the --zig aarch64 build. Nothing below re-syncs before the builds run.
     - uv pip install maturin ziglang
+    # Put the venv first on PATH: maturin's `--zig` finds the zig linker by running `python3 -m
+    # ziglang`, and that python3 must be the venv one (which has ziglang), not the system python.
+    # Without this the aarch64 cross-compile fails with "Failed to find zig".
+    - export PATH="$CI_PROJECT_DIR/.venv/bin:$PATH"
     # Build the abi3 wheels + sdist with maturin (cp311-abi3 = one wheel per arch for Python 3.11+).
     - .venv/bin/maturin build --release -m rust/Cargo.toml -o dist                     # x86_64
     # aarch64/Graviton via zig cross-compile. Best-effort: an ARM cross-compile flake must NOT

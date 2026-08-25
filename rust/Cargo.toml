@@ -1,12 +1,12 @@
-# Optional native accelerator for fastumap: a Rust reimplementation of the SGD layout
-# kernel, built as a Python extension module with PyO3 + maturin. The base `fastumap`
-# package stays pure numpy+scipy; when this module is importable, layout.py uses it.
+# Native kernels for fastumap: the SGD layout kernel + k-means, built as the fastumap._accel
+# Python extension module with PyO3 + maturin and shipped INSIDE the fastumap wheel (there is
+# no separate package). layout.py / clustering.py use it whenever it is present.
 #
-# Build (dev):   maturin develop --release      (from this directory, into the venv)
+# Build (dev):   maturin develop --release      (from the repo ROOT, into the venv)
 # Build wheels:  maturin build --release         (x86_64 + aarch64 via --zig for Graviton)
 [package]
 name = "fastumap"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Native SGD + k-means kernels for fastumap (built into the package)."
 license = "MIT"
