@@ -70,6 +70,7 @@ from fastumap import cluster
 
 labels = cluster(embeddings, method="kmeans", n_clusters=20)     # k-means++ / Lloyd
 labels = cluster(embeddings, method="spectral", n_clusters=20)   # non-convex clusters
+labels = cluster(embeddings, method="dbscan")                    # density: finds k, noise = -1
 ```
 
 Both take `n_clusters` and `metric` (`"euclidean"` / `"cosine"`) and are deterministic given

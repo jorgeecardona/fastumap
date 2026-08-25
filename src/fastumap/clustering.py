@@ -84,6 +84,8 @@ def cluster(
     metric: str = ...,
     n_iter: int = ...,
     random_state: int = ...,
+    eps: float | None = ...,
+    min_samples: int = ...,
     return_centroids: Literal[False] = ...,
 ) -> IntArray: ...
 @overload
@@ -96,6 +98,8 @@ def cluster(
     metric: str = ...,
     n_iter: int = ...,
     random_state: int = ...,
+    eps: float | None = ...,
+    min_samples: int = ...,
     return_centroids: Literal[True],
 ) -> ClusterResult: ...
 def cluster(
@@ -107,26 +111,40 @@ def cluster(
     metric: str = "euclidean",
     n_iter: int = 50,
     random_state: int = 42,
+    eps: float | None = None,
+    min_samples: int = 5,
     return_centroids: bool = False,
 ) -> IntArray | ClusterResult:
     """Cluster ``embeddings`` ``(n, d)`` into integer labels ``(n,)``.
 
-    ``method`` is ``"kmeans"`` or ``"spectral"``. Both take ``n_clusters``. ``metric`` is
-    ``"euclidean"`` or ``"cosine"`` (cosine unit-normalises the rows). Deterministic given
-    ``random_state``. Does NOT compute a layout. For a picture, call ``umap_project`` separately.
+    Three methods:
+
+    - ``"kmeans"`` and ``"spectral"`` take ``n_clusters`` (you pick k).
+    - ``"dbscan"`` picks the number of clusters itself and labels outliers ``-1``. It takes
+      ``eps`` (``None`` = auto) and ``min_samples`` instead of ``n_clusters``. Good when you don't
+      know k or want noise handling; see :func:`dbscan`.
+
+    ``metric`` is ``"euclidean"`` or ``"cosine"`` (cosine unit-normalises the rows). Deterministic
+    given ``random_state``. Does NOT compute a layout. For a picture, call ``umap_project``.
 
     With ``return_centroids=True`` the return is a :class:`ClusterResult` (labels, centroids,
-    inertia) instead of just labels. So you can compare runs or pick ``n_clusters`` by inertia
-    without a second pass.
+    inertia) instead of just labels (``"kmeans"`` / ``"spectral"`` only).
     """
     x = np.ascontiguousarray(embeddings, dtype=np.float64)
     if x.ndim != 2:
         raise ValueError("embeddings must be 2-D (n, d)")
     if metric not in ("euclidean", "cosine"):
         raise ValueError(f"unknown metric {metric!r}; use 'euclidean' or 'cosine'")
+    work = _unit_rows(x) if metric == "cosine" else x
+    if method == "dbscan":
+        if return_centroids:
+            raise ValueError(
+                "return_centroids is not supported for method='dbscan' (noise has no centroid)"
+            )
+        # work is already metric-normalised, so run dbscan in euclidean space on it.
+        return dbscan(work, eps=eps, min_samples=min_samples, metric="euclidean")
     if n_clusters is None:
         raise ValueError(f"method={method!r} requires n_clusters")
-    work = _unit_rows(x) if metric == "cosine" else x
     if method == "kmeans":
         labels, centroids = kmeans(work, n_clusters, n_iter=n_iter, random_state=random_state)
     elif method == "spectral":
@@ -134,7 +152,7 @@ def cluster(
         # spectral returns labels only; recover input-space centroids from them when asked.
         centroids = _centroids_from_labels(work, labels, n_clusters) if return_centroids else None
     else:
-        raise ValueError(f"unknown method {method!r}; use 'kmeans' or 'spectral'")
+        raise ValueError(f"unknown method {method!r}; use 'kmeans', 'spectral', or 'dbscan'")
     if return_centroids:
         assert centroids is not None
         return ClusterResult(labels, centroids, _inertia(work, labels, centroids))
@@ -164,6 +182,97 @@ def assign_clusters(
         raise ValueError(f"unknown metric {metric!r}; use 'euclidean' or 'cosine'")
     work = _unit_rows(x) if metric == "cosine" else x
     return _assign(work, c)
+
+
+def dbscan(
+    embeddings: FloatArray,
+    *,
+    eps: float | None = None,
+    min_samples: int = 5,
+    metric: str = "euclidean",
+    n_neighbors: int = 30,
+) -> IntArray:
+    """Density clustering (DBSCAN). Finds clusters of any shape and labels outliers ``-1``, with
+    no ``n_clusters`` to choose.
+
+    A point is a *core* point if at least ``min_samples`` points (itself included) lie within
+    ``eps`` of it. Core points within ``eps`` of each other join one cluster. A non-core point
+    within ``eps`` of a core joins as a *border*. Everything else is noise (``-1``).
+
+    ``eps=None`` picks ``eps`` as the median distance to each point's ``min_samples``-th neighbour
+    (the usual k-distance heuristic). Neighbours come from fastumap's kNN (blocked exact, or the
+    faiss approx backend above ~16k points), so this scales past a naive O(n^2) DBSCAN. Only the
+    ``n_neighbors`` nearest are considered, so a very dense cluster may need a larger
+    ``n_neighbors`` (which must exceed ``min_samples``). Deterministic given the kNN.
+    """
+    from .neighbors import knn_graph  # lazy: keeps import light
+
+    x = np.ascontiguousarray(embeddings, dtype=np.float64)
+    if x.ndim != 2:
+        raise ValueError("embeddings must be 2-D (n, d)")
+    if metric not in ("euclidean", "cosine"):
+        raise ValueError(f"unknown metric {metric!r}; use 'euclidean' or 'cosine'")
+    if min_samples < 1:
+        raise ValueError("min_samples must be >= 1")
+    work = _unit_rows(x) if metric == "cosine" else x
+    n = work.shape[0]
+    k = min(max(n_neighbors, min_samples + 1), n)
+    indices, dists = knn_graph(work, k, metric=metric, mode="auto")
+    if eps is None:
+        col = min(min_samples, k - 1)  # distance to the min_samples-th neighbour (column 0 = self)
+        eps = float(np.median(dists[:, col]))
+    return _dbscan(indices, dists, float(eps), min_samples)
+
+
+def _dbscan(indices: IntArray, dists: FloatArray, eps: float, min_samples: int) -> IntArray:
+    """DBSCAN over a precomputed kNN. Core points are unioned to their eps-neighbours; borders take
+    a neighbouring core's label; the rest are noise (-1)."""
+    n = indices.shape[0]
+    within = dists <= eps  # (n, k); column 0 is self at distance 0, so always within
+    core = within.sum(axis=1) >= min_samples  # (n,) bool
+
+    parent = np.arange(n, dtype=np.int64)
+
+    def find(a: int) -> int:
+        while int(parent[a]) != a:
+            parent[a] = parent[int(parent[a])]  # path halving
+            a = int(parent[a])
+        return a
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[max(ra, rb)] = min(ra, rb)
+
+    core_points = np.where(core)[0]
+    for i in core_points:
+        ii = int(i)
+        row_idx = indices[ii]
+        row_within = within[ii]
+        for pos in range(row_idx.shape[0]):
+            if row_within[pos]:
+                j = int(row_idx[pos])
+                if j != ii and core[j]:
+                    union(ii, j)
+
+    labels = np.full(n, -1, dtype=np.int64)
+    remap: dict[int, int] = {}
+    for i in core_points:
+        root = find(int(i))
+        if root not in remap:
+            remap[root] = len(remap)
+        labels[int(i)] = remap[root]
+    # border points: a non-core point within eps of a core takes that core's cluster label.
+    for i in range(n):
+        if core[i] or labels[i] != -1:
+            continue
+        row_idx = indices[i]
+        row_within = within[i]
+        for pos in range(row_idx.shape[0]):
+            if row_within[pos] and core[int(row_idx[pos])]:
+                labels[i] = labels[int(row_idx[pos])]
+                break
+    return labels
 
 
 def choose_k(

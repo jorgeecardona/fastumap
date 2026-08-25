@@ -5,6 +5,17 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.10] - 2026-08-25
+
+### Added
+- **`dbscan(...)` and `cluster(method="dbscan")`** — density clustering. Finds clusters of any
+  shape and labels outliers `-1`, with no `n_clusters` to pick — the canonical clusterer after a
+  UMAP reduction, and it finds non-convex clusters k-means cannot (two-moons at purity 1.0). Core
+  points (≥ `min_samples` within `eps`) grow clusters by union-find, borders join, the rest is
+  noise. `eps=None` auto-picks the median k-distance. Neighbours come from fastumap's own kNN
+  (blocked exact, or the faiss approx backend above ~16k points), so it scales past a naive O(n²)
+  DBSCAN. Exported at the top level.
+
 ## [0.2.9] - 2026-08-25
 
 ### Added

@@ -57,7 +57,7 @@ def test_no_n_clusters_raises() -> None:
 def test_bad_method_raises() -> None:
     x, _ = _blobs(n=100)
     with pytest.raises(ValueError, match="unknown method"):
-        cluster(x, method="dbscan", n_clusters=3)
+        cluster(x, method="meanshift", n_clusters=3)
 
 
 def test_too_many_clusters_raises() -> None:
