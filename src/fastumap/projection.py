@@ -41,11 +41,39 @@ def _validate(matrix: FloatArray, dimensions: int) -> FloatArray:
     x = np.ascontiguousarray(matrix, dtype=np.float64)
     if x.ndim != 2:
         raise ValueError("matrix must be 2-D (n_samples, n_features)")
-    if dimensions not in (2, 3):
-        raise ValueError("dimensions must be 2 or 3")
+    if dimensions < 1:
+        raise ValueError("dimensions must be >= 1")
+    if dimensions > x.shape[1]:
+        raise ValueError(
+            f"dimensions ({dimensions}) cannot exceed n_features ({x.shape[1]}) — not a reduction"
+        )
     if x.shape[0] < 2:
         raise ValueError("need at least 2 points to project")
     return x
+
+
+def _validate_precomputed_knn(
+    precomputed_knn: tuple[IntArray, FloatArray], n: int
+) -> tuple[IntArray, FloatArray]:
+    """Check a caller-supplied kNN and cast it to the internal dtypes.
+
+    ``precomputed_knn`` is ``(indices, distances)``, each ``(n, k)``. Column 0 must be the point
+    itself (distance 0). That is what a self-inclusive exact kNN returns, and what a faiss query
+    with the same vectors returns. It is the same convention ``knn_graph`` produces.
+    """
+    indices, distances = precomputed_knn
+    idx = np.ascontiguousarray(indices, dtype=np.int64)
+    dst = np.ascontiguousarray(distances, dtype=np.float64)
+    if idx.ndim != 2 or idx.shape != dst.shape:
+        raise ValueError(
+            f"precomputed_knn must be two (n, k) arrays of the same shape; "
+            f"got indices {idx.shape} and distances {dst.shape}"
+        )
+    if idx.shape[0] != n:
+        raise ValueError(f"precomputed_knn has {idx.shape[0]} rows, but the input has {n} points")
+    if idx.shape[1] < 2:
+        raise ValueError("precomputed_knn needs at least 2 neighbours per point (self + 1)")
+    return idx, dst
 
 
 def _pca_reduce(x: FloatArray, pca_dim: int) -> tuple[FloatArray, FloatArray, FloatArray]:
@@ -166,6 +194,7 @@ def fit(
     chunk_count: int = 1,
     pca_dim: int | None = None,
     knn: str = "auto",
+    precomputed_knn: tuple[IntArray, FloatArray] | None = None,
     init: FloatArray | None = None,
     y: IntArray | None = None,
     target_weight: float = 0.5,
@@ -177,6 +206,12 @@ def fit(
     ``pca_dim`` (default ``None`` = off) pre-reduces the input to that many principal
     components before the kNN. This speeds up high-dimensional inputs. ``transform``
     projects new points through the same basis.
+
+    ``precomputed_knn`` skips the built-in neighbour search. Pass ``(indices, distances)``, each
+    ``(n, k)`` with column 0 the point itself, e.g. a faiss query you already ran against your own
+    index. Then ``n_neighbors``, ``metric`` and ``knn`` no longer affect the graph, and it cannot
+    be combined with ``pca_dim``. ``transform`` still uses ``matrix``'s own kNN, so pass the kNN of
+    ``matrix`` (in ``matrix``'s space) if you also want ``transform``.
 
     ``init`` overrides the spectral start with a given ``(n, dimensions)`` embedding. Pass
     the previous view's coordinates so a refreshed layout stays comparable, instead of
@@ -192,12 +227,17 @@ def fit(
     n, n_features = x.shape
     pca_mean: FloatArray | None = None
     pca_components: FloatArray | None = None
+    if precomputed_knn is not None and pca_dim is not None:
+        raise ValueError("pass either pca_dim or precomputed_knn, not both (pca moves the space)")
     work = x
     if pca_dim is not None and n_features > pca_dim:
         work, pca_mean, pca_components = _pca_reduce(x, pca_dim)
     k = min(n_neighbors, n)
 
-    knn_indices, knn_dists = knn_graph(work, k, metric=metric, mode=knn)
+    if precomputed_knn is not None:
+        knn_indices, knn_dists = _validate_precomputed_knn(precomputed_knn, n)
+    else:
+        knn_indices, knn_dists = knn_graph(work, k, metric=metric, mode=knn)
     graph = fuzzy_simplicial_set(knn_indices, knn_dists)
     if y is not None:
         graph = categorical_intersection(
@@ -255,11 +295,16 @@ def umap_project(
     chunk_count: int = 1,
     pca_dim: int | None = None,
     knn: str = "auto",
+    precomputed_knn: tuple[IntArray, FloatArray] | None = None,
     init: FloatArray | None = None,
     y: IntArray | None = None,
     target_weight: float = 0.5,
 ) -> FloatArray:
-    """Project ``matrix`` (n_samples, n_features) into ``dimensions`` (2 or 3).
+    """Project ``matrix`` (n_samples, n_features) into ``dimensions`` output dims.
+
+    Use 2 or 3 for a picture. Use a mid dimension (~10) when the goal is to *cluster* the
+    result: UMAP's own guidance is to reduce to ~10 dims, not 2, before clustering, so the
+    layout keeps more structure. ``dimensions`` must be at least 1 and at most ``n_features``.
 
     Deterministic given ``random_state``: the spectral start vector is pinned and the
     negative sampler is seeded, so the same input and seed give bit-identical output.
@@ -282,6 +327,7 @@ def umap_project(
         chunk_count=chunk_count,
         pca_dim=pca_dim,
         knn=knn,
+        precomputed_knn=precomputed_knn,
         init=init,
         y=y,
         target_weight=target_weight,

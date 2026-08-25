@@ -242,7 +242,8 @@ Each is enforced by a test:
 - **Import under 200 ms**, deterministic (bit-identical) output, and thread-safe.
 - **Bounded memory** — the full n×n distance matrix is never materialised (blocked kNN); under
   200 MB at 5000×1024.
-- **2-D and 3-D** first-class; fully type-checked under pyright strict.
+- **Any output dimension** — 2-D/3-D for pictures, ~10-D for clustering; fully type-checked under
+  pyright strict.
 
 ## Development
 

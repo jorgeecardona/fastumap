@@ -5,6 +5,18 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-08-25
+
+### Added
+- **Project to any output dimension**, not just 2 or 3. `umap_project(x, dimensions=10)` now works.
+  The SGD and spectral init were always dimension-agnostic; only one validation line forbade it.
+  Use a mid dimension (~10) when the goal is to *cluster* the result — umap-learn's own advice is
+  to reduce to ~10 dims, not 2, before clustering. `dimensions` must be in `[1, n_features]`.
+- **`precomputed_knn`** on `umap_project` / `fit`: pass your own `(indices, distances)` (each
+  `(n, k)`, column 0 the point itself, e.g. from a faiss index you already built) to skip the
+  built-in neighbour search. Feeding the same kNN reproduces the built-in layout bit-for-bit. It
+  cannot be combined with `pca_dim`.
+
 ## [0.2.8] - 2026-08-25
 
 ### Changed
