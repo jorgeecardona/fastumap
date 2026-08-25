@@ -11,12 +11,27 @@ Two steps:
 from __future__ import annotations
 
 import importlib
+from dataclasses import dataclass
 
 import numpy as np
 
 from . import _scipy
 from ._types import FloatArray, IntArray
 from .graph import FuzzyGraph, make_epochs_per_sample
+
+
+@dataclass(frozen=True)
+class _DensityStats:
+    """Per-epoch densMAP quantities, held fixed while points move during the epoch."""
+
+    R: FloatArray  # z-scored log original-space radius per vertex (fixed for the whole run)
+    x: FloatArray  # log embedding radius per vertex this epoch (umap's dens_re_sum)
+    phi_sum: FloatArray  # sum of the low-D kernel phi at each vertex this epoch
+    re_std: float  # sqrt(var(x) + dens_var_shift)
+    re_mean: float  # mean(x)
+    re_cov: float  # dot(x, R) / (n - 1)
+    mu_tot: float  # total membership mass, sum(graph.weight)
+
 
 try:
     # Native accelerator. Built into the package as the compiled `fastumap._accel` submodule.
@@ -154,6 +169,10 @@ def optimize_layout(
     gamma: float = 1.0,
     initial_alpha: float = 1.0,
     chunk_count: int = 1,
+    dens_lambda: float = 0.0,
+    dens_frac: float = 0.3,
+    dens_var_shift: float = 0.1,
+    dens_R: FloatArray | None = None,
 ) -> FloatArray:
     """Attract/repel SGD over the graph edges.
 
@@ -168,14 +187,22 @@ def optimize_layout(
 
     Attraction pulls both ends of a due edge. Repulsion pushes the head away from
     ``negative_sample_rate`` uniform samples. Every gradient component is clamped to +/-4.
+
+    densMAP: when ``dens_lambda > 0`` and ``dens_R`` (the z-scored log original-space radius per
+    vertex) is given, a density-preserving term is added to the attraction gradient for the last
+    ``dens_frac`` fraction of epochs. It pushes each point's local embedding radius to correlate
+    with its original radius, so dense/sparse regions stay dense/sparse. This forces the numpy
+    path (the Rust kernel does plain UMAP). Faithful port of umap-learn's densmap.
     """
     head = graph.head
     tail = graph.tail
     epochs_per_sample = make_epochs_per_sample(graph.weight, n_epochs)
+    dens_active = dens_lambda > 0.0 and dens_R is not None
 
     # Native fast path: the Rust kernel does the true in-place walk. chunk_count>1's in-epoch
-    # feedback is a numpy-only approximation, so only take this path for the default.
-    if _accel_optimize is not None and chunk_count <= 1:
+    # feedback is a numpy-only approximation, and the Rust kernel has no densMAP term, so only
+    # take this path for the plain default.
+    if _accel_optimize is not None and chunk_count <= 1 and not dens_active:
         seed = int(rng.integers(0, 2**63 - 1))
         result = _accel_optimize(
             np.ascontiguousarray(embedding, dtype=np.float64),
@@ -198,7 +225,9 @@ def optimize_layout(
     emb = np.array(embedding, dtype=np.float64, order="C")
     n_vertices = emb.shape[0]
 
-    def edge_delta(edge_idx: IntArray, positions: FloatArray, alpha: float) -> FloatArray:
+    def edge_delta(
+        edge_idx: IntArray, positions: FloatArray, alpha: float, density: _DensityStats | None
+    ) -> FloatArray:
         h = head[edge_idx]
         t = tail[edge_idx]
         delta = np.zeros_like(positions)
@@ -215,6 +244,31 @@ def optimize_layout(
         grad = np.clip(attract_coeff[:, None] * diff, -_GRAD_CLIP, _GRAD_CLIP) * alpha
         _scatter_add(delta, h, grad)
         _scatter_add(delta, t, -grad)
+
+        # densMAP: extra force on this attraction edge that nudges the local embedding radius
+        # toward the original radius. Faithful to umap-learn's density gradient (dens_R is the
+        # z-scored log original radius; x/phi_sum/std/mean/cov are this epoch's embedding stats).
+        if density is not None:
+            safe = np.where(nonzero, d2, 1.0)  # avoid pow(0, b-1) blowups; masked to 0 below
+            phi = 1.0 / (1.0 + a * np.power(safe, b))
+            dphi = a * b * np.power(safe, b - 1.0) * phi
+            common = 1.0 - b * (1.0 - phi)
+            drt = (phi / density.phi_sum[t]) * (common / np.exp(density.x[t]) + dphi)
+            drh = (phi / density.phi_sum[h]) * (common / np.exp(density.x[h]) + dphi)
+            re_std_sq = density.re_std * density.re_std
+            w_t = density.R[t] - density.re_cov * (density.x[t] - density.re_mean) / re_std_sq
+            w_h = density.R[h] - density.re_cov * (density.x[h] - density.re_mean) / re_std_sq
+            grad_cor = (
+                dens_lambda
+                * density.mu_tot
+                * (w_t * drt + w_h * drh)
+                / (graph.weight[edge_idx] * density.re_std)
+                / n_vertices
+            )
+            dens_grad = np.clip(2.0 * grad_cor[:, None] * diff, -_GRAD_CLIP, _GRAD_CLIP) * alpha
+            dens_grad[~nonzero] = 0.0  # d2==0 => diff==0 => no density direction
+            _scatter_add(delta, h, dens_grad)
+            _scatter_add(delta, t, -dens_grad)
 
         # One blocked draw instead of negative_sample_rate sequential ones: PCG64 fills the
         # (rate, m) buffer in the same stream order, so the samples are bit-identical.
@@ -243,20 +297,52 @@ def optimize_layout(
 
         return delta
 
+    dens_mu_tot = float(graph.weight.sum())
+
+    def density_stats(positions: FloatArray) -> _DensityStats:
+        # One pass over all edges: the embedding local radius per vertex (weighted by the low-D
+        # kernel phi), plus the correlation stats. Fixed while points move during the epoch.
+        assert dens_R is not None
+        d = positions[head] - positions[tail]
+        d2f: FloatArray = np.einsum("ij,ij->i", d, d)
+        phi = 1.0 / (1.0 + a * np.power(d2f, b))
+        pd2 = phi * d2f
+        re_num = np.bincount(head, weights=pd2, minlength=n_vertices) + np.bincount(
+            tail, weights=pd2, minlength=n_vertices
+        )
+        phi_sum = np.bincount(head, weights=phi, minlength=n_vertices) + np.bincount(
+            tail, weights=phi, minlength=n_vertices
+        )
+        x = np.log(1e-8 + re_num / phi_sum)
+        return _DensityStats(
+            R=dens_R,
+            x=x,
+            phi_sum=phi_sum,
+            re_std=float(np.sqrt(np.var(x) + dens_var_shift)),
+            re_mean=float(np.mean(x)),
+            re_cov=float(np.dot(x, dens_R) / (n_vertices - 1)),
+            mu_tot=dens_mu_tot,
+        )
+
     for epoch in range(n_epochs):
         alpha = initial_alpha * (1.0 - epoch / n_epochs)
         due: IntArray = np.where((epoch_of_next <= epoch) & (epochs_per_sample > 0.0))[0]
         if due.shape[0] == 0:
             continue
 
+        # densMAP turns on for the last dens_frac fraction of epochs (a plain-UMAP warmup first).
+        density = (
+            density_stats(emb) if dens_active and (epoch + 1) / n_epochs > 1.0 - dens_frac else None
+        )
+
         if chunk_count <= 1:
-            emb += edge_delta(due, emb, alpha)  # in place: no fresh (n, dim) alloc per epoch
+            emb += edge_delta(due, emb, alpha, density)  # in place: no fresh (n, dim) alloc
         else:
             shuffled = due[rng.permutation(due.shape[0])]
             for chunk in np.array_split(shuffled, chunk_count):
                 if chunk.shape[0] == 0:
                     continue
-                emb += edge_delta(chunk, emb, alpha)
+                emb += edge_delta(chunk, emb, alpha, density)
 
         epoch_of_next[due] += epochs_per_sample[due]
 

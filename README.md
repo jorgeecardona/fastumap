@@ -29,7 +29,9 @@ from fastumap import umap_project, spectral_project
 
 xy  = umap_project(x, 2)                     # (n, 2)
 xyz = umap_project(x, 3)                     # (n, 3)
+red = umap_project(x, 10)                    # ~10-D for clustering (not just 2/3)
 cos = umap_project(x, 2, metric="cosine")    # text / CLS embeddings
+dm  = umap_project(x, 2, densmap=True)       # densMAP: keep dense/sparse regions distinct
 ```
 
 - `metric="cosine"` is recommended for encoder embeddings; Euclidean distance on unnormalised

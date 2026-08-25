@@ -13,6 +13,7 @@ import numpy as np
 from ._threads import with_blas_limit
 from ._types import Float32Array, FloatArray, IntArray
 from .graph import (
+    FuzzyGraph,
     categorical_intersection,
     compute_membership,
     find_ab_params,
@@ -74,6 +75,28 @@ def _validate_precomputed_knn(
     if idx.shape[1] < 2:
         raise ValueError("precomputed_knn needs at least 2 neighbours per point (self + 1)")
     return idx, dst
+
+
+def _original_radius(work: FloatArray, graph: FuzzyGraph) -> FloatArray:
+    """densMAP's original-space local radius per vertex, z-scored.
+
+    It is the membership-weighted mean of squared edge distances (in the kNN space), logged and
+    then standardised. A faithful port of umap-learn's density setup. The z-score makes it robust
+    to whether the graph stores one or both directions of each edge (both scale numerator and
+    denominator equally).
+    """
+    diff = work[graph.head] - work[graph.tail]
+    edge_d2: FloatArray = np.einsum("ij,ij->i", diff, diff)
+    mu = graph.weight
+    n = work.shape[0]
+    ro_num = np.bincount(graph.head, weights=mu * edge_d2, minlength=n) + np.bincount(
+        graph.tail, weights=mu * edge_d2, minlength=n
+    )
+    mu_sum = np.bincount(graph.head, weights=mu, minlength=n) + np.bincount(
+        graph.tail, weights=mu, minlength=n
+    )
+    ro = np.log(1e-8 + ro_num / mu_sum)
+    return (ro - ro.mean()) / ro.std()
 
 
 def _pca_reduce(x: FloatArray, pca_dim: int) -> tuple[FloatArray, FloatArray, FloatArray]:
@@ -198,6 +221,10 @@ def fit(
     init: FloatArray | None = None,
     y: IntArray | None = None,
     target_weight: float = 0.5,
+    densmap: bool = False,
+    dens_lambda: float = 2.0,
+    dens_frac: float = 0.3,
+    dens_var_shift: float = 0.1,
 ) -> UMAPModel:
     """Fit a UMAP layout and return a :class:`UMAPModel` (use ``.embedding`` for the coords).
 
@@ -243,6 +270,7 @@ def fit(
         graph = categorical_intersection(
             graph, np.asarray(y, dtype=np.int64), target_weight=target_weight
         )
+    dens_R = _original_radius(work, graph) if densmap else None
     rng = np.random.default_rng(random_state)
     if init is not None:
         if init.shape != (n, dimensions):
@@ -252,6 +280,8 @@ def fit(
         start = spectral_layout(graph, dimensions, rng=rng)
     a, b = find_ab_params(spread, min_dist)
     epochs = _default_epochs(n) if n_epochs is None else n_epochs
+    if densmap:
+        epochs += 200  # umap-learn adds a density-off warmup budget on top
     embedding = optimize_layout(
         start,
         graph,
@@ -261,6 +291,10 @@ def fit(
         rng=rng,
         negative_sample_rate=negative_sample_rate,
         chunk_count=chunk_count,
+        dens_lambda=dens_lambda if densmap else 0.0,
+        dens_frac=dens_frac,
+        dens_var_shift=dens_var_shift,
+        dens_R=dens_R,
     )
     return UMAPModel(
         # Store the training set (only used by transform's kNN) as float32. This halves the
@@ -299,6 +333,8 @@ def umap_project(
     init: FloatArray | None = None,
     y: IntArray | None = None,
     target_weight: float = 0.5,
+    densmap: bool = False,
+    dens_lambda: float = 2.0,
 ) -> FloatArray:
     """Project ``matrix`` (n_samples, n_features) into ``dimensions`` output dims.
 
@@ -312,6 +348,10 @@ def umap_project(
     ``metric`` is ``"euclidean"`` or ``"cosine"``. ``chunk_count > 1`` enables partial
     in-epoch feedback (higher local overlap, slower). ``pca_dim`` pre-reduces the input to
     that many principal components before the kNN, to speed up high-dimensional inputs.
+
+    ``densmap=True`` turns on densMAP: it keeps dense regions dense and sparse regions sparse,
+    instead of UMAP's usual flattening of local density. ``dens_lambda`` (default 2.0) is the
+    strength. It runs on the numpy path (the native kernel does plain UMAP), so it is slower.
     See the README.
     """
     return fit(
@@ -331,6 +371,8 @@ def umap_project(
         init=init,
         y=y,
         target_weight=target_weight,
+        densmap=densmap,
+        dens_lambda=dens_lambda,
     ).embedding
 
 

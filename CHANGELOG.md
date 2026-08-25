@@ -5,6 +5,17 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.11] - 2026-08-25
+
+### Added
+- **densMAP** — `umap_project(x, 2, densmap=True)` (and `fit(densmap=True)`), the density-preserving
+  UMAP variant. It keeps dense regions dense and sparse regions sparse instead of flattening local
+  density. A faithful port of umap-learn's density gradient: verified to lift the original-vs-
+  embedding density correlation from ~0.02 to ~0.90 on a mixed-density dataset, matching umap-learn's
+  own ~0.02→0.92. `dens_lambda` (default 2.0) sets the strength; the density term runs in the final
+  `dens_frac` (0.3) of epochs after a plain-UMAP warmup. It forces the numpy SGD path (the Rust
+  kernel does plain UMAP), so it is slower.
+
 ## [0.2.10] - 2026-08-25
 
 ### Added
