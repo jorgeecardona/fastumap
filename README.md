@@ -1,7 +1,8 @@
 # fastumap
 
-A UMAP implementation in pure **NumPy and SciPy**, built so that importing it costs
-milliseconds rather than seconds.
+A UMAP and clustering library built for one thing: **importing it costs milliseconds, not
+seconds** — nothing compiles when you import it. Mostly NumPy and SciPy, with optional
+precompiled native kernels (a small Rust wheel) for speed at scale.
 
 | | cold import | added to image |
 |---|---:|---:|
@@ -76,6 +77,13 @@ assignment step, so the n×k distance matrix is never materialised — it holds 
 constraint at scale. `spectral` reuses fastumap's own normalised-eigenvector machinery, then
 k-means those. For a picture, call `umap_project` separately (usually on a sample) — clustering
 and visualisation are different jobs.
+
+For large inputs the optional `fastumap-accel` wheel replaces the k-means inner loop with a
+native kernel (matrixmultiply SIMD GEMM + rayon over row-blocks): it clusters **1,000,000 × 128
+into 64 groups in ~10 s** on a 16-core machine (measured on SIFT1M), versus minutes for the numpy
+path, and engages automatically above 50k points when installed. That is a **multi-core batch**
+figure — on a throttled container (0.5–2 vCPU) the same job is CPU-bound and takes far longer, so
+run clustering on a real machine, not a fractional-vCPU serving box.
 
 ## Quality relative to umap-learn
 
@@ -201,8 +209,9 @@ stored projection can record how it was produced.
 
 Each is enforced by a test:
 
-- **No JIT or compiled stack at runtime** — NumPy, SciPy, and the small pure-Python
-  `threadpoolctl`; never numba, llvmlite, scikit-learn, or first-party compiled code.
+- **Nothing compiles at import** — no numba/llvmlite JIT. The base is NumPy, SciPy and the
+  pure-Python `threadpoolctl`; the optional native kernels ship as precompiled wheels, so they
+  import in milliseconds too.
 - **Import under 200 ms**, deterministic (bit-identical) output, and thread-safe.
 - **Bounded memory** — the full n×n distance matrix is never materialised (blocked kNN); under
   200 MB at 5000×1024.

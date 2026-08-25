@@ -6,9 +6,9 @@
 # Build wheels:  maturin build --release         (x86_64 + aarch64 via --zig for Graviton)
 [package]
 name = "fastumap-accel"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
-description = "Native SGD kernel for fastumap (optional accelerator)."
+description = "Native SGD + k-means kernels for fastumap (optional accelerator)."
 license = "MIT"
 
 [lib]
@@ -21,6 +21,13 @@ crate-type = ["cdylib"]
 # as a Python extension without linking libpython.
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py311"] }
 numpy = "0.22"
+# Data-parallel k-means assignment (the O(n*k*d) hot loop). A pure-Rust crate compiled into the
+# wheel — no external/system library, consistent with "implement it, don't collect libraries".
+rayon = "1"
+# Pure-Rust SIMD GEMM (no external BLAS): the k-means assignment is X @ centroidsᵀ, and a naive
+# triple loop is ~18x too slow at 1M. matrixmultiply gives BLAS-ish throughput while keeping the
+# wheel self-contained.
+matrixmultiply = "0.3"
 
 [profile.release]
 opt-level = 3

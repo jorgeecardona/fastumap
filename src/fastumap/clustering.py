@@ -20,11 +20,21 @@ question to settle against a benchmark.
 
 from __future__ import annotations
 
+import importlib
+
 import numpy as np
 
 from ._types import FloatArray, IntArray
 
 _BLOCK = 4096  # rows per block in the assignment step; bounds peak memory to block-by-k
+_ACCEL_MIN = 50_000  # below this the numpy path is fast and deterministic; above, use the accel
+
+try:
+    # Optional native k-means (part of fastumap-accel): a matrixmultiply-GEMM + rayon Lloyd that
+    # clusters 1M x 128 in ~10s vs the numpy path's minutes. Same API; different (f32) results.
+    _accel_kmeans = importlib.import_module("fastumap_accel").kmeans
+except (ImportError, AttributeError):
+    _accel_kmeans = None
 
 
 def _unit_rows(x: FloatArray) -> FloatArray:
@@ -90,14 +100,37 @@ def _kmeanspp_init(x: FloatArray, k: int, rng: np.random.Generator) -> FloatArra
     return centroids
 
 
+def _centroids_from_labels(x: FloatArray, labels: IntArray, k: int) -> FloatArray:
+    """Per-cluster mean — the accel returns labels only, so recover centroids here."""
+    dim = x.shape[1]
+    counts = np.bincount(labels, minlength=k).astype(np.float64)
+    centroids = np.zeros((k, dim), dtype=np.float64)
+    for d in range(dim):
+        centroids[:, d] = np.bincount(labels, weights=x[:, d], minlength=k)
+    nonempty = counts > 0
+    centroids[nonempty] /= counts[nonempty, None]
+    return centroids
+
+
 def kmeans(
     x: FloatArray, n_clusters: int, *, n_iter: int = 50, random_state: int = 42
 ) -> tuple[IntArray, FloatArray]:
-    """Lloyd's k-means with k-means++ init. Returns ``(labels, centroids)``. Deterministic."""
+    """Lloyd's k-means with k-means++ init. Returns ``(labels, centroids)``.
+
+    Uses the native fastumap-accel kernel above ``_ACCEL_MIN`` points when it is installed
+    (~10s at 1M x 128 vs minutes for numpy); otherwise the pure-numpy path here, which is
+    deterministic to the byte. Both converge to the same objective within the usual tolerance.
+    """
     if n_clusters < 1:
         raise ValueError("n_clusters must be >= 1")
     if n_clusters > x.shape[0]:
         raise ValueError(f"n_clusters={n_clusters} exceeds n={x.shape[0]}")
+    if _accel_kmeans is not None and x.shape[0] >= _ACCEL_MIN:
+        data = np.ascontiguousarray(x, dtype=np.float64)
+        labels = np.asarray(
+            _accel_kmeans(data, n_clusters, n_iter, int(random_state)), dtype=np.int64
+        )
+        return labels, _centroids_from_labels(data, labels, n_clusters)
     rng = np.random.default_rng(random_state)
     centroids = _kmeanspp_init(x, n_clusters, rng)
     labels = _assign(x, centroids)

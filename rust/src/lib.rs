@@ -12,8 +12,11 @@
 //!
 //! NOTE: unbuilt scaffold. The first `maturin develop` may need minor PyO3 0.22 API tweaks.
 
-use numpy::{IntoPyArray, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
+use numpy::{
+    IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,
+};
 use pyo3::prelude::*;
+use rayon::prelude::*;
 
 const GRAD_CLIP: f64 = 4.0;
 
@@ -135,8 +138,198 @@ fn optimize_layout<'py>(
     Ok(arr.into_pyarray_bound(py))
 }
 
+/// k-means (k-means++ seed + Lloyd), the compiled counterpart of `clustering.kmeans`.
+///
+/// The assignment step is the O(n*k*d) wall. It's computed as a single GEMM
+/// `G = X @ centroidsᵀ` via matrixmultiply's SIMD kernel (nearest centroid = argmin over
+/// `‖c‖² − 2·G[i,·]`, since `‖x‖²` is constant per row), then argmin parallelised over rows with
+/// rayon. All in f32 for SIMD width — clustering tolerates it. Deterministic given `seed` (not
+/// identical to the numpy path: different init RNG and f32). Returns the `(n,)` integer labels.
+#[pyfunction]
+fn kmeans<'py>(
+    py: Python<'py>,
+    data: PyReadonlyArray2<'py, f64>,
+    n_clusters: usize,
+    n_iter: usize,
+    seed: u64,
+) -> PyResult<Bound<'py, PyArray1<i64>>> {
+    let shape = data.shape();
+    let n = shape[0];
+    let dim = shape[1];
+    let x: Vec<f32> = data.as_slice()?.iter().map(|&v| v as f32).collect(); // row-major (n, dim)
+    let labels = py.allow_threads(|| kmeans_impl(&x, n, dim, n_clusters, n_iter, seed));
+    Ok(numpy::ndarray::Array1::from_vec(labels).into_pyarray_bound(py))
+}
+
+fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u64) -> Vec<i64> {
+    let dist2 = |a: &[f32], b: &[f32]| -> f32 {
+        let mut s = 0.0f32;
+        for d in 0..dim {
+            let diff = a[d] - b[d];
+            s += diff * diff;
+        }
+        s
+    };
+
+    // ─── k-means++ seeding ───
+    let mut rng = seed ^ 0x9E3779B97F4A7C15;
+    let mut centroids = vec![0.0f32; k * dim];
+    // Full k-means++ is O(n*k*d) — the fixed cost that dominates at 1M. Seed it from a random
+    // subsample instead (what faiss/sklearn do at scale); the sample captures the distribution,
+    // then Lloyd below refines against all n points.
+    let sn = n.min(100_000);
+    let sx: Vec<f32> = if sn < n {
+        let mut xs = vec![0.0f32; sn * dim];
+        for s in 0..sn {
+            let i = (splitmix64(&mut rng) % n as u64) as usize;
+            xs[s * dim..s * dim + dim].copy_from_slice(&x[i * dim..i * dim + dim]);
+        }
+        xs
+    } else {
+        x.to_vec()
+    };
+    let first = (splitmix64(&mut rng) % sn as u64) as usize;
+    centroids[0..dim].copy_from_slice(&sx[first * dim..first * dim + dim]);
+    let mut closest: Vec<f32> = (0..sn)
+        .into_par_iter()
+        .map(|i| dist2(&sx[i * dim..i * dim + dim], &centroids[0..dim]))
+        .collect();
+    for c in 1..k {
+        let total: f32 = closest.par_iter().sum();
+        let target = (splitmix64(&mut rng) as f64 / u64::MAX as f64) as f32 * total;
+        let mut chosen = sn - 1;
+        if total > 0.0 {
+            let mut acc = 0.0f32;
+            for (i, &d2) in closest.iter().enumerate() {
+                acc += d2;
+                if acc >= target {
+                    chosen = i;
+                    break;
+                }
+            }
+        } else {
+            chosen = (splitmix64(&mut rng) % sn as u64) as usize;
+        }
+        centroids[c * dim..c * dim + dim].copy_from_slice(&sx[chosen * dim..chosen * dim + dim]);
+        let cen = centroids[c * dim..c * dim + dim].to_vec();
+        closest.par_iter_mut().enumerate().for_each(|(i, cl)| {
+            let d2 = dist2(&sx[i * dim..i * dim + dim], &cen);
+            if d2 < *cl {
+                *cl = d2;
+            }
+        });
+    }
+
+    // ─── Lloyd iterations (GEMM assignment) ───
+    let mut labels = vec![0i64; n];
+    let mut g = vec![0.0f32; n * k]; // G = X @ centroidsᵀ, reused each iteration
+    for _ in 0..n_iter {
+        let mut c_sq = vec![0.0f32; k];
+        for j in 0..k {
+            let mut s = 0.0f32;
+            for d in 0..dim {
+                let v = centroids[j * dim + d];
+                s += v * v;
+            }
+            c_sq[j] = s;
+        }
+        // G (n×k) = X (n×dim) @ centroidsᵀ. centroids is (k×dim) row-major; viewing it as B with
+        // row-stride 1, col-stride dim gives Cᵀ (dim×k) without a copy. matrixmultiply is
+        // single-threaded, so split X into per-thread row-blocks and GEMM each independently.
+        let n_threads = rayon::current_num_threads().max(1);
+        let block = n.div_ceil(n_threads).max(1);
+        g.par_chunks_mut(block * k).enumerate().for_each(|(bi, gchunk)| {
+            let start = bi * block;
+            let rows = gchunk.len() / k;
+            if rows == 0 {
+                return;
+            }
+            unsafe {
+                matrixmultiply::sgemm(
+                    rows,
+                    dim,
+                    k,
+                    1.0,
+                    x.as_ptr().add(start * dim),
+                    dim as isize,
+                    1,
+                    centroids.as_ptr(),
+                    1,
+                    dim as isize,
+                    0.0,
+                    gchunk.as_mut_ptr(),
+                    k as isize,
+                    1,
+                );
+            }
+        });
+        let next: Vec<i64> = (0..n)
+            .into_par_iter()
+            .map(|i| {
+                let row = &g[i * k..i * k + k];
+                let mut best = 0usize;
+                let mut best_v = f32::INFINITY;
+                for j in 0..k {
+                    let val = c_sq[j] - 2.0 * row[j]; // = ‖x-c_j‖² minus the per-row constant ‖x‖²
+                    if val < best_v {
+                        best_v = val;
+                        best = j;
+                    }
+                }
+                best as i64
+            })
+            .collect();
+        // Converged once almost no point changes cluster. Exact equality never triggers at 1M
+        // (a handful always flip), so allow a 0.1% tolerance — real data stops well before n_iter.
+        let changed = next.iter().zip(labels.iter()).filter(|(a, b)| a != b).count();
+        labels = next;
+        if changed <= n / 1000 {
+            break;
+        }
+        // Centroid means as a parallel fold-reduce: each thread accumulates its own (sums,
+        // counts), then they're merged — avoids a data race on shared centroids.
+        let (sums, counts) = (0..n)
+            .into_par_iter()
+            .fold(
+                || (vec![0.0f32; k * dim], vec![0usize; k]),
+                |(mut s, mut cnt), i| {
+                    let c = labels[i] as usize;
+                    cnt[c] += 1;
+                    let xi = &x[i * dim..i * dim + dim];
+                    let sc = &mut s[c * dim..c * dim + dim];
+                    for d in 0..dim {
+                        sc[d] += xi[d];
+                    }
+                    (s, cnt)
+                },
+            )
+            .reduce(
+                || (vec![0.0f32; k * dim], vec![0usize; k]),
+                |(mut s1, mut c1), (s2, c2)| {
+                    for i in 0..k * dim {
+                        s1[i] += s2[i];
+                    }
+                    for i in 0..k {
+                        c1[i] += c2[i];
+                    }
+                    (s1, c1)
+                },
+            );
+        for c in 0..k {
+            if counts[c] > 0 {
+                let inv = 1.0f32 / counts[c] as f32;
+                for d in 0..dim {
+                    centroids[c * dim + d] = sums[c * dim + d] * inv;
+                }
+            }
+        }
+    }
+    labels
+}
+
 #[pymodule]
 fn fastumap_accel(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(optimize_layout, m)?)?;
+    m.add_function(wrap_pyfunction!(kmeans, m)?)?;
     Ok(())
 }
