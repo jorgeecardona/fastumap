@@ -1,9 +1,10 @@
 ---
 title: In-process ratio test for the native-vs-numpy speedup
-status: open
+status: done
 area: quality
 owner: null
 filed: 2026-08-25
+fixed_in: 750ad0b
 scope: S
 verify: test
 ---

@@ -78,9 +78,8 @@ cabildo issues show <slug>
 | [musllinux wheels for Alpine containers](25-08-2026-musllinux-wheels-for-alpine-containers.md) | production | S | inspect | open | — |
 | [Confirm the determinism guarantee on macOS in CI](25-08-2026-confirm-the-determinism-guarantee-on-macos-in-ci.md) | quality | S | test | open | macos-windows-wheels-in-ci |
 | [Coverage measurement + threshold gate](25-08-2026-coverage-measurement-threshold-gate.md) | quality | S | inspect | open | — |
-| [In-process ratio test for the native-vs-numpy speedup](25-08-2026-in-process-ratio-test-for-the-native-vs-numpy-speedup.md) | quality | S | test | open | — |
 | [Property-based invariants with hypothesis](25-08-2026-property-based-invariants-with-hypothesis.md) | quality | M | test | open | — |
 | [Scaling-shape test: t(2n)/t(n) stays bounded](25-08-2026-scaling-shape-test-t-2n-t-n-stays-bounded.md) | quality | S | test | open | — |
 
-_15 open — 15 open; 24 done. Generated; edit the files, then `cabildo issues reindex`._
+_14 open — 14 open; 25 done. Generated; edit the files, then `cabildo issues reindex`._
 <!-- END GENERATED INDEX -->
