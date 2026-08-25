@@ -85,7 +85,6 @@ cabildo issues show <slug>
 | [Property-based invariants with hypothesis](25-08-2026-property-based-invariants-with-hypothesis.md) | quality | M | test | open | — |
 | [Scaling-shape test: t(2n)/t(n) stays bounded](25-08-2026-scaling-shape-test-t-2n-t-n-stays-bounded.md) | quality | S | test | open | — |
 | [A land push to main does not reliably trigger a CI pipeline](25-08-2026-a-land-push-to-main-does-not-reliably-trigger-a-ci-pipeline.md) | release | S | inspect | open | — |
-| [Fix the stale GitLab project description + add topics](25-08-2026-fix-the-stale-gitlab-project-description-add-topics.md) | release | XS | inspect | open | — |
 
-_20 open — 20 open; 19 done. Generated; edit the files, then `cabildo issues reindex`._
+_19 open — 19 open; 20 done. Generated; edit the files, then `cabildo issues reindex`._
 <!-- END GENERATED INDEX -->
