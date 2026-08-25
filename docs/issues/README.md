@@ -73,8 +73,7 @@ cabildo issues show <slug>
 | [Broaden the x86_64 wheel glibc floor (manylinux2014)](25-08-2026-broaden-the-x86-64-wheel-glibc-floor-manylinux2014.md) | production | S | inspect | open | — |
 | [Constrained-vCPU (Fargate-like) performance probe](25-08-2026-constrained-vcpu-fargate-like-performance-probe.md) | production | M | probe | open | — |
 | [macOS + Windows wheels in CI](25-08-2026-macos-windows-wheels-in-ci.md) | production | M | inspect | open | — |
-| [musllinux wheels for Alpine containers](25-08-2026-musllinux-wheels-for-alpine-containers.md) | production | S | inspect | open | — |
 | [Confirm the determinism guarantee on macOS in CI](25-08-2026-confirm-the-determinism-guarantee-on-macos-in-ci.md) | quality | S | test | open | macos-windows-wheels-in-ci |
 
-_9 open — 9 open; 31 done. Generated; edit the files, then `cabildo issues reindex`._
+_8 open — 8 open; 32 done. Generated; edit the files, then `cabildo issues reindex`._
 <!-- END GENERATED INDEX -->

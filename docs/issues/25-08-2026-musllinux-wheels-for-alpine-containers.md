@@ -1,9 +1,10 @@
 ---
 title: musllinux wheels for Alpine containers
-status: open
+status: done
 area: production
 owner: null
 filed: 2026-08-25
+fixed_in: 9293cb1
 scope: S
 verify: inspect
 ---
