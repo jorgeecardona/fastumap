@@ -21,7 +21,9 @@ def _purity(true: IntArray, pred: IntArray) -> float:
     mask = pred != -1
     if not mask.any():
         return 0.0
-    total = sum(int(np.bincount(true[mask][pred[mask] == c]).max()) for c in set(pred[mask].tolist()))
+    total = sum(
+        int(np.bincount(true[mask][pred[mask] == c]).max()) for c in set(pred[mask].tolist())
+    )
     return total / int(mask.sum())
 
 
