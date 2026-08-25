@@ -1,9 +1,10 @@
 ---
 title: graph.py exp overflow on extreme inputs (compute-then-select)
-status: open
+status: done
 area: quality
 owner: null
 filed: 2026-08-25
+fixed_in: 0790371
 scope: XS
 verify: test
 ---
