@@ -1,9 +1,10 @@
 ---
 title: cluster() returns centroids + inertia from the public API
-status: open
+status: done
 area: capability
-owner: null
+owner: gentle-atlas-13a06
 filed: 2026-08-25
+fixed_in: f1d62ed
 scope: S
 verify: test
 ---
