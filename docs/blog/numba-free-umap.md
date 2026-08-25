@@ -76,8 +76,8 @@ llvmlite. Measured against the numpy SGD:
 
 Faster *and* higher quality — because it's the real in-place walk, not a snapshot
 approximation. It builds as an **abi3** wheel (`cp311-abi3`): one binary that works on Python
-3.11 and every version after, no per-version rebuild. It ships as an optional accelerator; the
-base install stays pure numpy + scipy and is the fallback.
+3.11 and every version after, no per-version rebuild. It ships built into the `fastumap` wheel;
+the numpy path stays as the fallback for a source build without a Rust toolchain.
 
 So the false choice — fast import *or* native speed — dissolves. You can have both. You just
 have to compile at the right moment.

@@ -1,11 +1,11 @@
-"""fastumap — a numba-free UMAP in pure numpy + scipy.
+"""fastumap — fast, import-light UMAP and clustering.
 
-The public surface is deliberately small: ``umap_project`` and ``spectral_project``
-for layouts, and the three grading metrics.
+The public surface is deliberately small: ``umap_project`` / ``spectral_project`` for layouts,
+``cluster`` / ``assign_clusters`` for clustering, and the grading metrics.
 
 Imports are lazy on purpose. The whole reason this library exists is import cost, so
-``import fastumap`` must not drag in numpy or scipy at module load. The names below are
-bound on first access via ``__getattr__``; the ``TYPE_CHECKING`` block gives type
+``import fastumap`` must not drag in numpy or scipy (or the native kernel) at module load. The
+names below are bound on first access via ``__getattr__``; the ``TYPE_CHECKING`` block gives type
 checkers and IDEs the real signatures without triggering those imports at runtime.
 """
 

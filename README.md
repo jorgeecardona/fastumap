@@ -178,6 +178,10 @@ import fastumap
 fastumap.accelerator_active()   # True if the native kernel is present (the normal case)
 ```
 
+**Upgrading from `fastumap-accel`?** It no longer exists as a separate package — its kernels are
+built into `fastumap` itself (0.2.1+). Just `pip install -U fastumap` and drop any
+`fastumap-accel` dependency; nothing else changes.
+
 ## Large inputs (approximate kNN)
 
 The exact neighbour search is O(n²) and dominates runtime above ~20k points. `pip install

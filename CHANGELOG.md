@@ -5,6 +5,14 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-08-25
+
+### Changed
+- Docs content pass for the 0.2.x merge: removed the last "pure numpy + scipy" claims from the
+  `fastumap` and `fastumap.clustering` module docstrings and the blog draft, and added a
+  `fastumap-accel` → `fastumap` migration note to the README (the package is gone; its kernels
+  are built in). No code change.
+
 ## [0.2.3] - 2026-08-25
 
 ### Added

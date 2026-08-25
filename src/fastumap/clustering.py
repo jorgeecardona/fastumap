@@ -1,13 +1,14 @@
-"""Clustering, implemented in pure numpy + scipy — no new dependencies.
+"""Clustering, implemented ourselves — numpy + scipy with a built-in native k-means kernel, no
+third-party clustering library.
 
 fastumap reimplements UMAP from scratch; clustering is the same. ``cluster()`` deliberately does
 NOT compute a 2-D/3-D layout first (that layout is an iterative SGD and takes minutes at a million
 points; clustering does not need it). Two methods, both ours:
 
 - ``method="kmeans"`` — k-means (k-means++ seeding, Lloyd iterations, blocked assignment so the
-  n-by-k distance matrix is never materialised). Fastest; you pick ``n_clusters``. This is the
-  path aimed at a ~10 s budget at 1M points; when the numpy inner loop is the wall, the Rust
-  accelerator is the place to speed it up (as it did for the SGD), not a third-party library.
+  n-by-k distance matrix is never materialised). Fastest; you pick ``n_clusters``. Above ~50k
+  points it routes through the built-in native kernel (``fastumap._accel``) — ~10 s at 1M x 128 —
+  and otherwise the deterministic numpy path here.
 - ``method="spectral"`` — spectral clustering: build the fuzzy kNN graph, take the leading
   normalised-adjacency eigenvectors (fastumap's own spectral machinery), and k-means those. Finds
   non-convex clusters k-means alone misses. Needs ``fastumap[ann]`` only above ~16k points, where
