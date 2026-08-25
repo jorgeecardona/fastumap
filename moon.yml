@@ -21,7 +21,8 @@ tasks:
     inputs: ['src/**/*.py', 'tests/**/*.py', 'bench/**/*.py', 'pyproject.toml']
 
   test:
-    command: 'uv run pytest'
+    # --cov measures library coverage and fails under the pyproject [tool.coverage] floor (90%).
+    command: 'uv run pytest --cov=fastumap --cov-report=term-missing'
     # rust/** is an input: the compiled kernel is part of the package, so a Rust change must
     # re-run the suite (uv sync rebuilds fastumap._accel via maturin).
     inputs: ['src/**/*.py', 'tests/**/*.py', 'rust/**/*.rs', 'rust/Cargo.toml', 'pyproject.toml']

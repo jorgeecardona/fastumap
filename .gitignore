@@ -32,6 +32,12 @@ logs/
 # Cached benchmark datasets (MNIST etc.)
 /bench/data/
 
+# Coverage artifacts (pytest-cov)
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
 # Rust extension build artifacts
 /rust/target/
 # maturin's editable/develop build drops the compiled extension into the package tree
