@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from fastumap import cluster
-from fastumap.clustering import kmeans
+from fastumap.clustering import ClusterResult, kmeans
 
 
 def _blobs(n: int = 1500, d: int = 20, k: int = 5, spread: float = 6.0, seed: int = 0):
@@ -74,3 +74,39 @@ def test_accel_path_recovers_clusters() -> None:
     labels = cluster(x, method="kmeans", n_clusters=8, random_state=0)
     assert labels.shape == (60_000,)
     assert _purity(y, labels) > 0.95
+
+
+def test_return_centroids_gives_centroids_and_matching_inertia() -> None:
+    x, y = _blobs()
+    res = cluster(x, method="kmeans", n_clusters=5, random_state=0, return_centroids=True)
+    assert isinstance(res, ClusterResult)
+    assert res.centroids.shape == (5, x.shape[1])
+    assert res.labels.shape == (x.shape[0],)
+    assert res.inertia > 0.0 and np.isfinite(res.inertia)
+    # inertia is exactly the sum of squared distances to the assigned centroid
+    manual = float(((x - res.centroids[res.labels]) ** 2).sum())
+    assert abs(res.inertia - manual) <= 1e-6 * manual
+    assert _purity(y, res.labels) > 0.95
+
+
+def test_return_centroids_default_still_returns_a_plain_label_array() -> None:
+    x, _ = _blobs(n=200)
+    labels = cluster(x, method="kmeans", n_clusters=5, random_state=0)
+    assert not isinstance(labels, ClusterResult)
+    assert labels.shape == (200,)
+
+
+def test_return_centroids_works_for_spectral() -> None:
+    x, _ = _blobs()
+    res = cluster(x, method="spectral", n_clusters=5, random_state=0, return_centroids=True)
+    assert isinstance(res, ClusterResult)
+    assert res.centroids.shape == (5, x.shape[1])
+    assert np.isfinite(res.inertia)
+
+
+def test_inertia_decreases_as_k_increases() -> None:
+    # the number you compare when picking k: more clusters -> tighter fit -> lower inertia.
+    x, _ = _blobs()
+    coarse = cluster(x, method="kmeans", n_clusters=3, random_state=0, return_centroids=True)
+    fine = cluster(x, method="kmeans", n_clusters=8, random_state=0, return_centroids=True)
+    assert fine.inertia < coarse.inertia

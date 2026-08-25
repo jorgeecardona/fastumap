@@ -21,6 +21,8 @@ question to settle against a benchmark.
 from __future__ import annotations
 
 import importlib
+from dataclasses import dataclass
+from typing import Literal, overload
 
 import numpy as np
 
@@ -43,6 +45,56 @@ def _unit_rows(x: FloatArray) -> FloatArray:
     return x / np.where(norms > 0.0, norms, 1.0)[:, None]
 
 
+@dataclass(frozen=True)
+class ClusterResult:
+    """What ``cluster(..., return_centroids=True)`` returns.
+
+    ``centroids`` and ``inertia`` are in the space the clustering ran in — the input space, or
+    unit-normalised rows for ``metric="cosine"``. ``inertia`` is the k-means objective (the sum of
+    squared distances from each point to its assigned centroid); lower is tighter, and it is the
+    number to compare across ``n_clusters`` when picking k.
+    """
+
+    labels: IntArray
+    centroids: FloatArray
+    inertia: float
+
+
+def _inertia(x: FloatArray, labels: IntArray, centroids: FloatArray) -> float:
+    """k-means objective: sum of squared distances to the assigned centroid, one block at a time
+    so the (n, d) difference is never materialised all at once."""
+    total = 0.0
+    for start in range(0, x.shape[0], _BLOCK):
+        block = x[start : start + _BLOCK]
+        diff = block - centroids[labels[start : start + _BLOCK]]
+        total += float(np.einsum("ij,ij->", diff, diff))
+    return total
+
+
+@overload
+def cluster(
+    embeddings: FloatArray,
+    *,
+    method: str = ...,
+    n_clusters: int | None = ...,
+    n_neighbors: int = ...,
+    metric: str = ...,
+    n_iter: int = ...,
+    random_state: int = ...,
+    return_centroids: Literal[False] = ...,
+) -> IntArray: ...
+@overload
+def cluster(
+    embeddings: FloatArray,
+    *,
+    method: str = ...,
+    n_clusters: int | None = ...,
+    n_neighbors: int = ...,
+    metric: str = ...,
+    n_iter: int = ...,
+    random_state: int = ...,
+    return_centroids: Literal[True],
+) -> ClusterResult: ...
 def cluster(
     embeddings: FloatArray,
     *,
@@ -52,12 +104,17 @@ def cluster(
     metric: str = "euclidean",
     n_iter: int = 50,
     random_state: int = 42,
-) -> IntArray:
+    return_centroids: bool = False,
+) -> IntArray | ClusterResult:
     """Cluster ``embeddings`` ``(n, d)`` into integer labels ``(n,)``.
 
     ``method`` is ``"kmeans"`` or ``"spectral"``; both take ``n_clusters``. ``metric`` is
     ``"euclidean"`` or ``"cosine"`` (cosine unit-normalises the rows). Deterministic given
     ``random_state``. Does NOT compute a layout — for a picture call ``umap_project`` separately.
+
+    With ``return_centroids=True`` the return is a :class:`ClusterResult` (labels, centroids,
+    inertia) instead of just labels, so you can compare runs or pick ``n_clusters`` by inertia
+    without a second pass.
     """
     x = np.ascontiguousarray(embeddings, dtype=np.float64)
     if x.ndim != 2:
@@ -68,10 +125,17 @@ def cluster(
         raise ValueError(f"method={method!r} requires n_clusters")
     work = _unit_rows(x) if metric == "cosine" else x
     if method == "kmeans":
-        return kmeans(work, n_clusters, n_iter=n_iter, random_state=random_state)[0]
-    if method == "spectral":
-        return _spectral(work, n_clusters, n_neighbors, metric, n_iter, random_state)
-    raise ValueError(f"unknown method {method!r}; use 'kmeans' or 'spectral'")
+        labels, centroids = kmeans(work, n_clusters, n_iter=n_iter, random_state=random_state)
+    elif method == "spectral":
+        labels = _spectral(work, n_clusters, n_neighbors, metric, n_iter, random_state)
+        # spectral returns labels only; recover input-space centroids from them when asked.
+        centroids = _centroids_from_labels(work, labels, n_clusters) if return_centroids else None
+    else:
+        raise ValueError(f"unknown method {method!r}; use 'kmeans' or 'spectral'")
+    if return_centroids:
+        assert centroids is not None
+        return ClusterResult(labels, centroids, _inertia(work, labels, centroids))
+    return labels
 
 
 def _assign(x: FloatArray, centroids: FloatArray) -> IntArray:

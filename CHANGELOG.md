@@ -5,6 +5,17 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-25
+
+### Added
+- `cluster(..., return_centroids=True)` returns a `ClusterResult` (labels, centroids, inertia)
+  instead of just labels, so you can compare runs or pick `n_clusters` by inertia without a second
+  pass. `inertia` is the k-means objective — the sum of squared distances to the assigned centroid,
+  computed one block at a time so the (n, d) difference is never fully materialised. `ClusterResult`
+  is exported at the top level. The default (`return_centroids=False`) is unchanged — still a plain
+  label array. Works for both `method="kmeans"` and `method="spectral"` (centroids in the input
+  space).
+
 ## [0.2.1] - 2026-08-25
 
 ### Fixed
