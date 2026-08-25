@@ -97,3 +97,34 @@ def test_assignment_memory_bound_is_independent_of_n(monkeypatch: pytest.MonkeyP
     rows_small = _max_distance_block_rows(small, small[:k].copy(), monkeypatch)
     rows_large = _max_distance_block_rows(large, large[:k].copy(), monkeypatch)
     assert rows_small == rows_large == _BLOCK
+
+
+def _count_distance_blocks(
+    x: FloatArray, centroids: FloatArray, monkeypatch: pytest.MonkeyPatch
+) -> int:
+    """Number of 2-D argmin calls in one assignment = number of distance blocks = ceil(n/_BLOCK).
+    The op-count stand-in for wall-clock t(n): it is what makes the assignment linear in n."""
+    calls = 0
+
+    def spy_argmin(a: Any, *args: Any, **kwargs: Any) -> Any:
+        nonlocal calls
+        if np.asarray(a).ndim == 2:
+            calls += 1
+        return _REAL_ARGMIN(a, *args, **kwargs)
+
+    monkeypatch.setattr(np, "argmin", spy_argmin)
+    _REAL_ASSIGN(x, centroids)
+    return calls
+
+
+def test_assignment_work_scales_linearly_with_n(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Machine-independent t(2n)/t(n): count distance blocks (deterministic work), not wall-clock,
+    # so it never flakes. Blocked assignment does ceil(n/_BLOCK) blocks, so doubling n doubles the
+    # count (ratio ~2, well under 2.5). An unblocked O(n*k) build would collapse this to 1 block
+    # for every n; a superlinear build would explode it. Either breaks the exact-2x assertion.
+    k, d, n = 30, 16, 20_000
+    small = _count_distance_blocks(_blobs(n, d, k), _blobs(n, d, k)[:k].copy(), monkeypatch)
+    large = _count_distance_blocks(_blobs(2 * n, d, k), _blobs(2 * n, d, k)[:k].copy(), monkeypatch)
+    assert small > 1  # genuinely blocked, not one big matrix
+    assert large == pytest.approx(2 * small, abs=1)  # linear: doubling n ~doubles the block count
+    assert large / small < 2.5
