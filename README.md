@@ -57,6 +57,26 @@ categorical `discrete_metric_simplicial_set_intersection`; the original UMAP pap
 the simplicial-set-intersection idea (arXiv:1802.03426, §7 Future Work), so the reference
 implementation is the source. See umap-learn's [supervised docs](https://umap-learn.readthedocs.io/en/latest/supervised.html).
 
+## Clustering
+
+`cluster` groups points directly — implemented in pure numpy+scipy, with no external clustering
+library. It does **not** compute a 2-D layout first: that layout is an iterative SGD and takes
+minutes at a million points, and clustering doesn't need it.
+
+```python
+from fastumap import cluster
+
+labels = cluster(embeddings, method="kmeans", n_clusters=20)     # k-means++ / Lloyd
+labels = cluster(embeddings, method="spectral", n_clusters=20)   # non-convex clusters
+```
+
+Both take `n_clusters` and `metric` (`"euclidean"` / `"cosine"`) and are deterministic given
+`random_state`. k-means is our own k-means++ seeding and Lloyd iterations with a **blocked**
+assignment step, so the n×k distance matrix is never materialised — it holds to the low-memory
+constraint at scale. `spectral` reuses fastumap's own normalised-eigenvector machinery, then
+k-means those. For a picture, call `umap_project` separately (usually on a sample) — clustering
+and visualisation are different jobs.
+
 ## Quality relative to umap-learn
 
 fastumap stays within 0.01–0.02 neighbour overlap of umap-learn and is marginally ahead on
