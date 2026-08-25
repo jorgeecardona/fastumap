@@ -1,9 +1,10 @@
 ---
 title: Documentation content pass for 0.2.x (post-merge)
-status: open
+status: done
 area: harness
 owner: null
 filed: 2026-08-25
+fixed_in: 22ed12b
 scope: M
 verify: inspect
 ---
