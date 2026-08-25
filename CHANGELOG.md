@@ -5,6 +5,15 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-25
+
+### Added
+- `assign_clusters(embeddings, centroids, *, metric=...)` — the predict half of a fit/predict
+  split. Assigns new rows to the nearest of a fitted `cluster(..., return_centroids=True)` /
+  `kmeans` centroid set without re-clustering, reusing the same blocked nearest-centroid step so
+  peak memory stays bounded. `metric` must match the fit (`"cosine"` unit-normalises, as fitting
+  did). Exported at the top level.
+
 ## [0.2.2] - 2026-08-25
 
 ### Added

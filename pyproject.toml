@@ -4,7 +4,7 @@
 # fastumap compiles at BUILD time instead, so it imports in milliseconds. Mostly numpy + scipy,
 # with native SGD/k-means kernels (fastumap._accel) built into the wheel by maturin.
 name = "fastumap"
-version = "0.2.2"
+version = "0.2.3"
 description = "Fast, import-light UMAP and clustering with native kernels — milliseconds to import."
 readme = "README.md"
 requires-python = ">=3.11"

@@ -19,6 +19,7 @@ __all__ = [
     "__version__",
     "accelerator_active",
     "ann_available",
+    "assign_clusters",
     "cluster",
     "fit",
     "global_distance_correlation",
@@ -35,7 +36,7 @@ if TYPE_CHECKING:
     # drift from what was published. Declared here for type checkers.
     __version__: str
 
-    from .clustering import ClusterResult, cluster
+    from .clustering import ClusterResult, assign_clusters, cluster
     from .layout import accelerator_active
     from .metrics import global_distance_correlation, neighbor_overlap, random_layout
     from .neighbors import ann_available
@@ -66,7 +67,7 @@ def __getattr__(name: str) -> object:
         from . import neighbors
 
         return neighbors.ann_available
-    if name in ("cluster", "ClusterResult"):
+    if name in ("cluster", "ClusterResult", "assign_clusters"):
         from . import clustering
 
         return getattr(clustering, name)

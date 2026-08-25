@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from fastumap import cluster
-from fastumap.clustering import ClusterResult, kmeans
+from fastumap.clustering import ClusterResult, assign_clusters, kmeans
 
 
 def _blobs(n: int = 1500, d: int = 20, k: int = 5, spread: float = 6.0, seed: int = 0):
@@ -110,3 +110,31 @@ def test_inertia_decreases_as_k_increases() -> None:
     coarse = cluster(x, method="kmeans", n_clusters=3, random_state=0, return_centroids=True)
     fine = cluster(x, method="kmeans", n_clusters=8, random_state=0, return_centroids=True)
     assert fine.inertia < coarse.inertia
+
+
+def test_assign_clusters_reproduces_fit_labels_and_predicts_held_out() -> None:
+    x, _ = _blobs(n=1500)
+    res = cluster(x[:1000], method="kmeans", n_clusters=5, random_state=0, return_centroids=True)
+    # predicting the training rows reproduces the fitted labels (they ARE nearest-centroid)
+    assert np.array_equal(assign_clusters(x[:1000], res.centroids), res.labels)
+    # held-out rows get the same label a manual argmin over centroids would give
+    held = x[1000:]
+    pred = assign_clusters(held, res.centroids)
+    manual = np.array(
+        [int(np.argmin(((held[i] - res.centroids) ** 2).sum(axis=1))) for i in range(len(held))]
+    )
+    assert np.array_equal(pred, manual)
+
+
+def test_assign_clusters_honours_cosine_metric() -> None:
+    x, _ = _blobs()
+    res = cluster(
+        x, method="kmeans", n_clusters=5, metric="cosine", random_state=0, return_centroids=True
+    )
+    pred = assign_clusters(x, res.centroids, metric="cosine")
+    assert np.array_equal(pred, res.labels)
+
+
+def test_assign_clusters_rejects_mismatched_dims() -> None:
+    with pytest.raises(ValueError, match="dim"):
+        assign_clusters(np.zeros((10, 4)), np.zeros((3, 5)))

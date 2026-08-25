@@ -138,6 +138,31 @@ def cluster(
     return labels
 
 
+def assign_clusters(
+    embeddings: FloatArray, centroids: FloatArray, *, metric: str = "euclidean"
+) -> IntArray:
+    """Assign each row of ``embeddings`` to its nearest of ``centroids`` — the *predict* half of a
+    fit/predict split, so new points get labels without re-clustering.
+
+    ``centroids`` come from a prior ``cluster(..., return_centroids=True)`` or ``kmeans`` run;
+    ``metric`` must match the one they were fitted with (``"cosine"`` unit-normalises the rows, as
+    fitting did). Uses the same blocked nearest-centroid step as ``cluster``, so peak memory is
+    bounded by the block size regardless of how many rows you pass.
+    """
+    x = np.ascontiguousarray(embeddings, dtype=np.float64)
+    if x.ndim != 2:
+        raise ValueError("embeddings must be 2-D (n, d)")
+    c = np.ascontiguousarray(centroids, dtype=np.float64)
+    if c.ndim != 2:
+        raise ValueError("centroids must be 2-D (k, d)")
+    if x.shape[1] != c.shape[1]:
+        raise ValueError(f"embeddings dim {x.shape[1]} != centroids dim {c.shape[1]}")
+    if metric not in ("euclidean", "cosine"):
+        raise ValueError(f"unknown metric {metric!r}; use 'euclidean' or 'cosine'")
+    work = _unit_rows(x) if metric == "cosine" else x
+    return _assign(work, c)
+
+
 def _assign(x: FloatArray, centroids: FloatArray) -> IntArray:
     """Nearest-centroid label per row, computed one block at a time (bounded memory)."""
     n = x.shape[0]
