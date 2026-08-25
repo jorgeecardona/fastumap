@@ -50,12 +50,13 @@ xy = umap_project(x, 2, y=labels)                     # labels: one int per poin
 xy = umap_project(x, 2, y=labels, target_weight=0.9)  # lean harder on the labels
 ```
 
-`target_weight` ∈ [0, 1] (default 0.5) trades geometry against labels: 0.0 attenuates inter-class
-edges the least, 1.0 severs them entirely. `-1` labels are treated as unlabelled (semi-supervised).
-Default `y=None` is ordinary unsupervised UMAP, unchanged. This is a faithful port of umap-learn's
-categorical `discrete_metric_simplicial_set_intersection`; the original UMAP paper only proposes
-the simplicial-set-intersection idea (arXiv:1802.03426, §7 Future Work), so the reference
-implementation is the source. See umap-learn's [supervised docs](https://umap-learn.readthedocs.io/en/latest/supervised.html).
+`target_weight` ∈ [0, 1] (default 0.5) trades geometry against labels: 0.0 barely weakens
+inter-class edges, 1.0 cuts them entirely. `-1` labels count as unlabelled (semi-supervised), and
+the default `y=None` is ordinary unsupervised UMAP, unchanged.
+
+This ports umap-learn's categorical intersection. The UMAP paper only sketches the idea
+(arXiv:1802.03426, §7 Future Work), so umap-learn is the reference — see its
+[supervised docs](https://umap-learn.readthedocs.io/en/latest/supervised.html).
 
 ## Clustering
 
@@ -77,6 +78,15 @@ assignment step, so the n×k distance matrix is never materialised — it holds 
 constraint at scale. `spectral` reuses fastumap's own normalised-eigenvector machinery, then
 k-means those. For a picture, call `umap_project` separately (usually on a sample) — clustering
 and visualisation are different jobs.
+
+More knobs:
+
+- **`return_centroids=True`** returns a `ClusterResult(labels, centroids, inertia)` instead of just
+  labels — the numbers you need to compare runs or pick k.
+- **`choose_k(x, k_min=2, k_max=10)`** picks `n_clusters` for you, by the inertia elbow. A
+  heuristic: it lands on the true k give or take one when the clusters are clear.
+- **`assign_clusters(x_new, centroids)`** labels new points against already-fitted centroids — the
+  predict half, no re-clustering.
 
 For large inputs fastumap's native k-means kernel — compiled into the wheel (matrixmultiply SIMD
 GEMM + rayon over row-blocks) — replaces the inner loop: it clusters **1,000,000 × 128 into 64
@@ -109,23 +119,29 @@ remaining local-overlap gap at proportional cost and stays deterministic.
 > projection (read against a random baseline). global corr is the Spearman correlation of all
 > pairwise distances, before versus after.
 
-## Performance characteristics
+## Speed per call
 
-At 1024 dimensions and n=5000, fastumap is roughly 2× slower per call than umap-learn
-(~40 s versus ~20 s). This is inherent rather than a missing optimisation: the layout SGD
-dominates runtime, and a vectorised NumPy SGD cannot match numba's compiled in-place optimiser.
-fastumap is therefore the appropriate choice when import and cold-start cost dominate, and less
-so when per-call latency on large, high-dimensional batches is the constraint. The optional
-accelerator narrows this gap.
+Cold start is fastumap's win. Per-call latency is the trade-off.
 
-When a CPU quota is visible inside the container — `docker --cpus`, Kubernetes/EKS CPU limits,
-EC2 cgroups — and the container still reports the host's full core count, an unconstrained BLAS
-pool sized to those cores oversubscribes the quota and thrashes under concurrent load. fastumap
-caps the pool to the quota automatically: measured under `docker --cpus=0.5` on a 16-core host
-with four workers, per-call time drops from ~70 s to ~43 s (≈1.6×). No configuration is needed,
-and nothing is capped where no quota is visible. (AWS Fargate is a known exception: it meters
-CPU outside the container's cgroup, so the quota is invisible and the cap is a no-op there — but
-Fargate's micro-VM also reports a low core count, so BLAS doesn't oversubscribe there anyway.)
+- The **native kernel ships by default**, so per-call speed is close to umap-learn on large
+  batches (it runs umap-learn's true in-place SGD, in Rust).
+- The **numpy fallback** (only an unbuilt source checkout uses it) is the slow one: ~2× slower at
+  1024 dims, n=5000 (~40 s vs ~20 s). A vectorised numpy SGD can't match numba's compiled loop.
+
+So: pick fastumap when import and cold-start cost dominate. On raw per-call latency for big,
+high-dimensional batches, it's roughly even with umap-learn on the kernel path.
+
+### BLAS thread cap under a CPU quota
+
+Some containers cap CPU (`docker --cpus`, Kubernetes/EKS limits, EC2 cgroups) but still report the
+host's full core count. BLAS then starts too many threads for the quota and thrashes under load.
+
+fastumap caps the BLAS pool to the quota automatically — no configuration. Measured under
+`docker --cpus=0.5`, 16-core host, 4 workers: per-call time drops ~70 s → ~43 s (≈1.6×). Where no
+quota is visible, nothing is capped.
+
+**AWS Fargate is a no-op here**: it meters CPU outside the cgroup, so the quota is invisible. But
+Fargate also reports a low core count, so BLAS doesn't oversubscribe there anyway.
 
 ## Server usage
 
@@ -133,8 +149,7 @@ Fargate's micro-VM also reports a low core count, so BLAS doesn't oversubscribe 
 per call — so it may be called from a worker thread (`await asyncio.to_thread(umap_project,
 x, 2)`).
 
-For long-running services, avoid recomputing the full layout on every request. Fit once and
-place new points into the existing layout:
+Don't recompute the whole layout on every request. Fit once, then place new points into it:
 
 ```python
 from fastumap import fit, transform
@@ -147,17 +162,19 @@ model.to_npz("layout.npz")                             # persist across restarts
 model = UMAPModel.from_npz("layout.npz")
 ```
 
-`transform` approximates a full refit (roughly 72% of its local overlap) while keeping the
-embedding stable across requests. `return_distances=True` returns each new point's distance to
-its nearest training neighbour — a per-point measure of fit: points landing 2–3× further out
-than the training set's own mean are extrapolations, and a rising batch mean is the signal to
-refit. Persist a model with `to_npz` / `from_npz`, a versioned numpy format that survives
-releases where a raw `pickle` would break on any dataclass change. To keep a *refreshed* view
-comparable without the fit/transform split, pass the previous coordinates as
-`umap_project(window, 2, init=previous)` so carried-over points start where they were (you place
-any new rows). A cached 5000×1024 model occupies about 20 MB (training data stored as float32).
-Rolling windows and sparse input are not supported — densify sparse input first, and refit when
-the window slides.
+- **`transform`** places new points without a refit. It keeps ~72% of a full fit's local overlap,
+  and the layout stays stable across requests.
+- **`return_distances=True`** gives each point's distance to its nearest training neighbour — a
+  fit score. A point 2–3× further out than the training mean is an extrapolation. A rising batch
+  mean means: time to refit.
+- **`to_npz` / `from_npz`** persists the model in a versioned numpy format. It survives releases;
+  a raw `pickle` would break on any dataclass change.
+- **`init=previous`** is the other option: `umap_project(window, 2, init=previous)` reuses the old
+  coordinates so carried-over points start where they were (you place any new rows). Use it to
+  refresh a view without the fit/transform split.
+
+A cached 5000×1024 model is about 20 MB (training data stored as float32). Not supported: rolling
+windows and sparse input — densify sparse input first, and refit when the window slides.
 
 ## The native accelerator
 
@@ -205,21 +222,23 @@ against exact. Measured on the neighbour search alone (256-dim):
 
 `fastumap.ann_available()` reports whether the backend is installed.
 
-For a given input and seed, output is bit-identical across processes and machines within one
-environment. Two things change the layout across *different* environments: whether the native
-kernel is present (the wheels carry it and it is used by default, but a run that falls back to the
-numpy optimiser — an unbuilt source checkout — differs) and `fastumap[ann]` (an approximate
-neighbour graph above 16k points). Treat both as part of the environment's dependency set;
-`accelerator_active()` and `ann_available()` report which paths a run used, so a stored projection
-can record how it was produced.
+For a given input and seed, output is bit-identical across processes and machines in the same
+environment. Two things change it across *different* environments:
+
+- **The native kernel vs the numpy fallback** — the wheels carry the kernel and use it by default;
+  an unbuilt checkout falls back to numpy and differs.
+- **`fastumap[ann]`** — the approximate neighbour graph above 16k points.
+
+Treat both as part of the environment. `accelerator_active()` and `ann_available()` report which
+paths a run used, so a stored projection can record how it was made.
 
 ## Guarantees
 
 Each is enforced by a test:
 
 - **Nothing compiles at import** — no numba/llvmlite JIT. The base is NumPy, SciPy and the
-  pure-Python `threadpoolctl`; the optional native kernels ship as precompiled wheels, so they
-  import in milliseconds too.
+  pure-Python `threadpoolctl`; the native kernels ship precompiled in the wheel, so they import in
+  milliseconds too.
 - **Import under 200 ms**, deterministic (bit-identical) output, and thread-safe.
 - **Bounded memory** — the full n×n distance matrix is never materialised (blocked kNN); under
   200 MB at 5000×1024.
