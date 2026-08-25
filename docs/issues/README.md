@@ -79,7 +79,6 @@ cabildo issues show <slug>
 | [Confirm the determinism guarantee on macOS in CI](25-08-2026-confirm-the-determinism-guarantee-on-macos-in-ci.md) | quality | S | test | open | macos-windows-wheels-in-ci |
 | [Coverage measurement + threshold gate](25-08-2026-coverage-measurement-threshold-gate.md) | quality | S | inspect | open | — |
 | [Property-based invariants with hypothesis](25-08-2026-property-based-invariants-with-hypothesis.md) | quality | M | test | open | — |
-| [Scaling-shape test: t(2n)/t(n) stays bounded](25-08-2026-scaling-shape-test-t-2n-t-n-stays-bounded.md) | quality | S | test | open | — |
 
-_14 open — 14 open; 25 done. Generated; edit the files, then `cabildo issues reindex`._
+_13 open — 13 open; 26 done. Generated; edit the files, then `cabildo issues reindex`._
 <!-- END GENERATED INDEX -->

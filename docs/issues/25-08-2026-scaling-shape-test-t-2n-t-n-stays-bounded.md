@@ -1,9 +1,10 @@
 ---
 title: "Scaling-shape test: t(2n)/t(n) stays bounded"
-status: open
+status: done
 area: quality
 owner: null
 filed: 2026-08-25
+fixed_in: 58144b5
 scope: S
 verify: test
 ---
