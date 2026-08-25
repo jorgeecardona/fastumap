@@ -1,9 +1,10 @@
 ---
 title: Coverage measurement + threshold gate
-status: open
+status: done
 area: quality
 owner: null
 filed: 2026-08-25
+fixed_in: e3dfee8
 scope: S
 verify: inspect
 ---

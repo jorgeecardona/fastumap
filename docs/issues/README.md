@@ -75,8 +75,7 @@ cabildo issues show <slug>
 | [macOS + Windows wheels in CI](25-08-2026-macos-windows-wheels-in-ci.md) | production | M | inspect | open | — |
 | [musllinux wheels for Alpine containers](25-08-2026-musllinux-wheels-for-alpine-containers.md) | production | S | inspect | open | — |
 | [Confirm the determinism guarantee on macOS in CI](25-08-2026-confirm-the-determinism-guarantee-on-macos-in-ci.md) | quality | S | test | open | macos-windows-wheels-in-ci |
-| [Coverage measurement + threshold gate](25-08-2026-coverage-measurement-threshold-gate.md) | quality | S | inspect | open | — |
 | [Property-based invariants with hypothesis](25-08-2026-property-based-invariants-with-hypothesis.md) | quality | M | test | open | — |
 
-_11 open — 11 open; 28 done. Generated; edit the files, then `cabildo issues reindex`._
+_10 open — 10 open; 29 done. Generated; edit the files, then `cabildo issues reindex`._
 <!-- END GENERATED INDEX -->
