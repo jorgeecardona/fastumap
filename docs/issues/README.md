@@ -66,7 +66,6 @@ cabildo issues show <slug>
 <!-- BEGIN GENERATED INDEX — `cabildo issues reindex` -->
 | Issue | Area | Scope | Verify | Status | Waiting on |
 |---|---|---|---|---|---|
-| [Clustering fit/predict split: assign new points to fitted centroids](25-08-2026-clustering-fit-predict-split-assign-new-points-to-fitted-centroids.md) | capability | S | test | open | — |
 | [k-means auto-select k (elbow / silhouette)](25-08-2026-k-means-auto-select-k-elbow-silhouette.md) | capability | M | test | open | — |
 | [Mini-batch k-means for constrained CPU (1M/<10s on 0.5–2 vCPU)](25-08-2026-mini-batch-k-means-for-constrained-cpu-1m-10s-on-0-5.md) | capability | L | probe | open | — |
 | [Build and publish a docs site](25-08-2026-build-and-publish-a-docs-site.md) | harness | M | inspect | open | — |
@@ -83,5 +82,5 @@ cabildo issues show <slug>
 | [Property-based invariants with hypothesis](25-08-2026-property-based-invariants-with-hypothesis.md) | quality | M | test | open | — |
 | [Scaling-shape test: t(2n)/t(n) stays bounded](25-08-2026-scaling-shape-test-t-2n-t-n-stays-bounded.md) | quality | S | test | open | — |
 
-_16 open — 16 open; 23 done. Generated; edit the files, then `cabildo issues reindex`._
+_15 open — 15 open; 24 done. Generated; edit the files, then `cabildo issues reindex`._
 <!-- END GENERATED INDEX -->

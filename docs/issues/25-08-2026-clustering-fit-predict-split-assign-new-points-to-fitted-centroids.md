@@ -1,9 +1,10 @@
 ---
 title: "Clustering fit/predict split: assign new points to fitted centroids"
-status: open
+status: done
 area: capability
 owner: null
 filed: 2026-08-25
+fixed_in: d891268
 scope: S
 verify: test
 ---
