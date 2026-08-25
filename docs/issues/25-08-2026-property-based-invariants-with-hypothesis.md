@@ -1,9 +1,10 @@
 ---
 title: Property-based invariants with hypothesis
-status: open
+status: done
 area: quality
 owner: null
 filed: 2026-08-25
+fixed_in: 5bbba0d
 scope: M
 verify: test
 ---
