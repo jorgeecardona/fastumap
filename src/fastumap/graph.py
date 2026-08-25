@@ -69,7 +69,10 @@ def smooth_knn_dist(
     offset = knn_dists[:, 1:] - rho[:, None]  # skip self column, like umap-learn
 
     for _iteration in range(n_iter):
-        val = np.where(offset > 0.0, np.exp(-offset / mid[:, None]), 1.0)
+        # Exponentiate only the kept elements: put 0.0 in the discarded (offset <= 0) slots so
+        # exp gives 1.0 there — bit-identical to the old np.where(..., exp(...), 1.0) but without
+        # computing exp on the discarded slots, where -offset/mid is large positive and overflows.
+        val = np.exp(np.where(offset > 0.0, -offset / mid[:, None], 0.0))
         psum = val.sum(axis=1)
         converged = np.abs(psum - target) < SMOOTH_K_TOLERANCE
         over = psum > target

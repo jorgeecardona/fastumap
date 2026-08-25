@@ -5,6 +5,15 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-08-25
+
+### Fixed
+- No more `RuntimeWarning: overflow encountered in exp` from the smooth-kNN membership step
+  (`graph.py`) on inputs with zero-distance neighbours. `np.where` evaluated `exp(-offset/mid)`
+  on the discarded `offset <= 0` slots too, where the exponent is large positive; now the
+  discarded slots carry 0.0 into a single `exp`, so it never overflows. Output is bit-identical
+  (surfaced by the hypothesis property tests).
+
 ## [0.2.5] - 2026-08-25
 
 ### Added
