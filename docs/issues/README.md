@@ -82,7 +82,6 @@ cabildo issues show <slug>
 | [In-process ratio test for the native-vs-numpy speedup](25-08-2026-in-process-ratio-test-for-the-native-vs-numpy-speedup.md) | quality | S | test | open | — |
 | [Property-based invariants with hypothesis](25-08-2026-property-based-invariants-with-hypothesis.md) | quality | M | test | open | — |
 | [Scaling-shape test: t(2n)/t(n) stays bounded](25-08-2026-scaling-shape-test-t-2n-t-n-stays-bounded.md) | quality | S | test | open | — |
-| [A land push to main does not reliably trigger a CI pipeline](25-08-2026-a-land-push-to-main-does-not-reliably-trigger-a-ci-pipeline.md) | release | S | inspect | open | — |
 
-_17 open — 17 open; 22 done. Generated; edit the files, then `cabildo issues reindex`._
+_16 open — 16 open; 23 done. Generated; edit the files, then `cabildo issues reindex`._
 <!-- END GENERATED INDEX -->
