@@ -1,9 +1,10 @@
 ---
 title: k-means auto-select k (elbow / silhouette)
-status: open
+status: done
 area: capability
 owner: null
 filed: 2026-08-25
+fixed_in: 90b439b
 scope: M
 verify: test
 ---

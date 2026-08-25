@@ -66,7 +66,6 @@ cabildo issues show <slug>
 <!-- BEGIN GENERATED INDEX — `cabildo issues reindex` -->
 | Issue | Area | Scope | Verify | Status | Waiting on |
 |---|---|---|---|---|---|
-| [k-means auto-select k (elbow / silhouette)](25-08-2026-k-means-auto-select-k-elbow-silhouette.md) | capability | M | test | open | — |
 | [Mini-batch k-means for constrained CPU (1M/<10s on 0.5–2 vCPU)](25-08-2026-mini-batch-k-means-for-constrained-cpu-1m-10s-on-0-5.md) | capability | L | probe | open | — |
 | [Build and publish a docs site](25-08-2026-build-and-publish-a-docs-site.md) | harness | M | inspect | open | — |
 | [Nightly full suite across all three Python versions](25-08-2026-nightly-full-suite-across-all-three-python-versions.md) | harness | S | test | open | — |
@@ -79,5 +78,5 @@ cabildo issues show <slug>
 | [Coverage measurement + threshold gate](25-08-2026-coverage-measurement-threshold-gate.md) | quality | S | inspect | open | — |
 | [Property-based invariants with hypothesis](25-08-2026-property-based-invariants-with-hypothesis.md) | quality | M | test | open | — |
 
-_12 open — 12 open; 27 done. Generated; edit the files, then `cabildo issues reindex`._
+_11 open — 11 open; 28 done. Generated; edit the files, then `cabildo issues reindex`._
 <!-- END GENERATED INDEX -->
