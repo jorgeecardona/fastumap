@@ -1,9 +1,10 @@
 ---
 title: Machine-independent perf tests via operation / iteration counts
-status: open
+status: done
 area: quality
-owner: null
+owner: gentle-atlas-13a06
 filed: 2026-08-25
+fixed_in: 7b0ed07
 scope: M
 verify: test
 ---
