@@ -5,6 +5,23 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-25
+
+### Changed
+- **The native kernels are now built into `fastumap` itself** — there is no separate
+  `fastumap-accel` package any more. `fastumap` is a maturin-built package: the pure-Python
+  `src/fastumap/` plus a compiled Rust extension (`fastumap._accel`, the SGD + k-means kernels)
+  shipped in the same abi3 wheel (`cp311-abi3`; Linux x86_64 and aarch64/Graviton, with an sdist
+  for other platforms). The kernels are used automatically — no `pip install fastumap[accel]`,
+  no accel-detection dance. `import fastumap` stays in the ~15 ms range because the extension is
+  imported lazily. On a platform without a prebuilt wheel, pip builds from the sdist, which needs
+  a Rust toolchain. The pure-NumPy path remains only as a runtime fallback for an unbuilt source
+  checkout (`accelerator_active()` reports which path a run used).
+- The tagline drops "pure NumPy and SciPy": fastumap now compiles native kernels at **build**
+  time. The value is a fast import (no import-time JIT) and sensible defaults, not purity.
+- `pip install fastumap[accel]` is removed (the accelerator is not optional any more).
+  `pip install fastumap[ann]` (approximate kNN via faiss) is unchanged.
+
 ## [0.1.10] - 2026-08-23
 
 ### Added

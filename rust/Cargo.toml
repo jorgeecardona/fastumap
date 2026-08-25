@@ -5,14 +5,16 @@
 # Build (dev):   maturin develop --release      (from this directory, into the venv)
 # Build wheels:  maturin build --release         (x86_64 + aarch64 via --zig for Graviton)
 [package]
-name = "fastumap-accel"
-version = "0.1.2"
+name = "fastumap"
+version = "0.2.0"
 edition = "2021"
-description = "Native SGD + k-means kernels for fastumap (optional accelerator)."
+description = "Native SGD + k-means kernels for fastumap (built into the package)."
 license = "MIT"
 
 [lib]
-name = "fastumap_accel"
+# Built by maturin as the `fastumap._accel` submodule of the merged package (was the separate
+# fastumap-accel wheel). See [tool.maturin] in the root pyproject.toml.
+name = "_accel"
 crate-type = ["cdylib"]
 
 [dependencies]

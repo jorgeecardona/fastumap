@@ -1,13 +1,11 @@
-# fastumap-accel
+# fastumap native kernels (`fastumap._accel`)
 
-The optional native accelerator for [fastumap](https://gitlab.com/jorgeecardona/fastumap): a
-Rust reimplementation of the SGD layout kernel (`optimize_layout`), built as a Python extension
-with PyO3 and maturin.
-
-It is not usually installed directly — `pip install fastumap[accel]` pulls it in. The base
-fastumap package remains pure NumPy and SciPy and installs without a build toolchain; when this
-wheel is present, fastumap uses it for the optimisation loop and otherwise falls back to the
-NumPy path. `fastumap.accelerator_active()` reports which path is in use.
+The compiled Rust extension built into [fastumap](https://gitlab.com/jorgeecardona/fastumap): the
+SGD layout kernel (`optimize_layout`) and the k-means kernel (`kmeans`), built as a Python
+extension with PyO3 and maturin and shipped **inside the fastumap wheel** — there is no separate
+package. On a platform with a prebuilt wheel it is always present; from an sdist it needs a Rust
+toolchain to compile, and without one fastumap falls back to its pure-NumPy path.
+`fastumap.accelerator_active()` reports which path is in use.
 
 ## Rationale
 
@@ -37,8 +35,12 @@ compatible with Python 3.11 and later — one build, no per-version rebuild.
 
 ## Building
 
+Run from the repository root — maturin reads the root `pyproject.toml` (its `[tool.maturin]`
+points `manifest-path` at this `rust/Cargo.toml`) and builds the whole `fastumap` wheel, Python
+plus extension:
+
 ```bash
-maturin develop --release          # build into the active virtualenv (development)
+maturin develop --release          # build + install into the active virtualenv (development)
 maturin build --release            # wheel for the current platform
 maturin sdist                      # source distribution
 # maturin build --release --zig --target aarch64-unknown-linux-gnu   # aarch64 / Graviton

@@ -328,7 +328,7 @@ fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u
 }
 
 #[pymodule]
-fn fastumap_accel(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _accel(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(optimize_layout, m)?)?;
     m.add_function(wrap_pyfunction!(kmeans, m)?)?;
     Ok(())

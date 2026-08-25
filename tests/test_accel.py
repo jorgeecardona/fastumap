@@ -1,7 +1,8 @@
-"""Optional Rust accelerator (fastumap-accel): when installed, the SGD runs natively.
+"""Native Rust accelerator (fastumap._accel), built into the package: the SGD runs natively.
 
-Skipped when the module isn't built, so the pure-numpy suite is unaffected; when it is,
-these check the fast path stays deterministic and keeps (in fact improves) quality.
+Skipped when the extension isn't built (a source checkout without a maturin build), so the
+pure-numpy fallback is unaffected; when it is, these check the fast path stays deterministic and
+keeps (in fact improves) quality.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import pytest
 
 from fixtures import gaussian_clusters
 
-pytest.importorskip("fastumap_accel")
+pytest.importorskip("fastumap._accel")
 
 from fastumap import neighbor_overlap, umap_project
 

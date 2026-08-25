@@ -67,9 +67,9 @@ def test_too_many_clusters_raises() -> None:
 
 
 def test_accel_path_recovers_clusters() -> None:
-    # n >= _ACCEL_MIN (50k) routes k-means through the native fastumap-accel kernel when present;
+    # n >= _ACCEL_MIN (50k) routes k-means through the built-in native kernel (fastumap._accel);
     # it gives different (f32) labels than numpy but must still recover well-separated clusters.
-    pytest.importorskip("fastumap_accel")
+    pytest.importorskip("fastumap._accel")
     x, y = _blobs(n=60_000, d=32, k=8)
     labels = cluster(x, method="kmeans", n_clusters=8, random_state=0)
     assert labels.shape == (60_000,)

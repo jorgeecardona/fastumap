@@ -1,12 +1,15 @@
-# fastumap CI/CD -- a single moon-driven job.
+# fastumap CI/CD.
 #
-# proto installs the pinned toolchain (.prototools: moon + uv); then ONE `moon run`
-# orchestrates the whole task graph (lint, format, typecheck, test, build, version-guard)
-# -- no per-language jobs, moon resolves the order. On the default branch it runs
-# `:release`: the same `:ci` checks run as deps, then it publishes to PyPI via OIDC Trusted
-# Publishing when pyproject's version isn't on PyPI yet (idempotent -- a no-op otherwise,
-# so it is safe on every main pipeline). The PyPI pending publisher is configured. See
-# README "Releasing".
+# fastumap is a maturin-built package: the pure-Python src/fastumap/ plus a compiled Rust
+# extension (fastumap._accel — the SGD + k-means kernels) shipped in the SAME wheel. So the build
+# needs a Rust toolchain, and "publish" ships abi3 wheels (x86_64 + aarch64) plus an sdist, all
+# under the single `fastumap` project. There is no separate fastumap-accel package any more.
+#
+# proto installs the pinned moon + uv (.prototools); one `moon run :ci` orchestrates the check
+# graph (lint, format, typecheck, test, version-guard). The job then builds the wheels with
+# maturin and, on the default branch, publishes dist/* to PyPI via OIDC Trusted Publishing when
+# pyproject's version isn't on PyPI yet (idempotent — a no-op on every other main pipeline). The
+# PyPI pending publisher is configured. See README "Releasing".
 
 default:
   image: debian:bookworm-slim
@@ -25,9 +28,8 @@ workflow:
     - if: $CI_COMMIT_BRANCH
 
 ci:
-  # OIDC Trusted Publishing: GitLab mints a short-lived id_token; scripts/pypi-publish
-  # exchanges it for a one-shot PyPI token. The `pypi` environment matches the PyPI
-  # publisher config.
+  # OIDC Trusted Publishing: GitLab mints a short-lived id_token; scripts/pypi-publish exchanges
+  # it for a one-shot PyPI token. The `pypi` environment matches the PyPI publisher config.
   id_tokens:
     PYPI_ID_TOKEN:
       aud: pypi
@@ -41,87 +43,58 @@ ci:
       paths:
         - .venv
   before_script:
-    # debian-slim is bare: bring what proto + pyright's bundled node (libatomic1) need.
-    - apt-get update && apt-get install -y --no-install-recommends curl git ca-certificates unzip xz-utils bash libatomic1
+    # debian-slim is bare: proto + pyright's bundled node (libatomic1) need these; build-essential
+    # + rustup give the Rust toolchain maturin compiles fastumap._accel with.
+    - apt-get update && apt-get install -y --no-install-recommends curl git ca-certificates unzip xz-utils bash libatomic1 build-essential
     - export PATH="$HOME/.proto/bin:$HOME/.proto/shims:$PATH"
     # Fetch proto straight from its GitHub release (moonrepo.dev is flaky from CI).
     - mkdir -p "$HOME/.proto/bin" /tmp/proto && curl -fsSL "https://github.com/moonrepo/proto/releases/latest/download/proto_cli-x86_64-unknown-linux-gnu.tar.xz" -o /tmp/proto/p.tar.xz && tar xf /tmp/proto/p.tar.xz --strip-components 1 -C /tmp/proto && mv /tmp/proto/proto /tmp/proto/proto-shim "$HOME/.proto/bin/" && rm -rf /tmp/proto
     - proto install                       # moon + uv, pinned in .prototools
-    - uv sync --frozen                    # ruff + pyright + pytest + test deps
-  script:
-    - export PATH="$HOME/.proto/bin:$HOME/.proto/shims:$PATH"
-    # On main: `:release` runs the full `:ci` graph then publishes if the version is new.
-    # Elsewhere (MRs/branches): checks only.
-    - |
-      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
-        moon run :release -c 1
-      else
-        moon run :ci -c 1
-      fi
-
-# Build the optional Rust accelerator, run the suite through the NATIVE SGD path, produce
-# the abi3 wheels, and (on main) publish them. Independent of `ci` (needs: []). Hard gate --
-# proven stable on the runner (pipeline #31). The venv is put first on PATH so bare
-# `maturin`/`python` resolve to it, avoiding `uv run` re-syncing the ad-hoc maturin + the
-# built accel back out of the environment. The aarch64 cross-compile stays best-effort
-# (`|| echo` in script), so an ARM-only flake can't red the gate.
-accel:
-  image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
-  needs: []
-  id_tokens:
-    PYPI_ID_TOKEN:
-      aud: pypi
-  environment:
-    name: pypi
-    url: https://pypi.org/project/fastumap-accel/
-  variables:
-    UV_LINK_MODE: copy
-    VIRTUAL_ENV: $CI_PROJECT_DIR/.venv
-  before_script:
-    - apt-get update && apt-get install -y --no-install-recommends curl build-essential ca-certificates
     - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
     - . "$HOME/.cargo/env"
-    - rustup target add aarch64-unknown-linux-gnu   # Graviton / ARM Lambda
-    - uv sync --frozen
-    - uv pip install maturin ziglang                # ziglang: maturin's cross-linker for --zig
+    - rustup target add aarch64-unknown-linux-gnu   # Graviton / ARM
+    - uv sync --frozen                    # builds fastumap (+ its _accel) via maturin, plus test deps
   script:
+    - export PATH="$HOME/.proto/bin:$HOME/.proto/shims:$PATH"
     - . "$HOME/.cargo/env"
-    # Put the venv first on PATH: maturin's `--zig` finds the zig linker via `python3 -m
-    # ziglang`, and it must resolve to the venv python that has ziglang, not the system one.
-    - export PATH="$CI_PROJECT_DIR/.venv/bin:$PATH"
-    - maturin develop --release -m rust/Cargo.toml
-    - python -c "import fastumap_accel; print('fastumap_accel import ok')"
-    # The accel is present, so this exercises the native optimize_layout path.
-    - VECLIB_MAXIMUM_THREADS=1 python -m pytest tests/test_accel.py tests/test_projection.py tests/test_determinism.py tests/test_metrics.py tests/test_cluster.py -q
-    # abi3 wheels (cp311-abi3 = one wheel per arch, all Python 3.11+).
-    - maturin build --release -m rust/Cargo.toml -o dist-accel                     # x86_64
-    # aarch64/Graviton via zig cross-compile. Best-effort: a cross-compile failure must NOT
-    # block the x86_64 publish below (that is what silently skipped the publish before).
-    - maturin build --release --zig --target aarch64-unknown-linux-gnu -m rust/Cargo.toml -o dist-accel || echo "aarch64 cross-compile failed; publishing x86_64 only"
-    # Source dist so macOS / other arches can build+install with a Rust toolchain (#8).
-    - maturin sdist -m rust/Cargo.toml -o dist-accel
-    # On main: publish whatever wheels are in dist-accel to PyPI via OIDC (idempotent; skips
-    # if the version is already up). The fastumap-accel pending publisher trusts this job.
+    # The check graph: lint, format, typecheck, test, version-guard. The test task runs the full
+    # suite against the installed package, so the native _accel path is exercised too.
+    - moon run :ci -c 1
+    # Install maturin + ziglang AFTER the check graph: `moon run` drives `uv run`, which re-syncs
+    # the venv to the lock and would evict these (they are not in the lock). ziglang is maturin's
+    # cross-linker for the --zig aarch64 build. Nothing below re-syncs before the builds run.
+    - uv pip install maturin ziglang
+    # Build the abi3 wheels + sdist with maturin (cp311-abi3 = one wheel per arch for Python 3.11+).
+    - .venv/bin/maturin build --release -m rust/Cargo.toml -o dist                     # x86_64
+    # aarch64/Graviton via zig cross-compile. Best-effort: an ARM cross-compile flake must NOT
+    # block the x86_64 + sdist publish below.
+    - .venv/bin/maturin build --release --zig --target aarch64-unknown-linux-gnu -m rust/Cargo.toml -o dist || echo "aarch64 cross-compile failed; publishing x86_64 + sdist only"
+    # Source dist so macOS / Windows / other arches can build+install with a Rust toolchain.
+    - .venv/bin/maturin sdist -m rust/Cargo.toml -o dist
+    # On main: publish dist/* to PyPI via OIDC (idempotent — a no-op if this version is already up).
     - |
       if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
-        sh scripts/pypi-publish-accel
+        sh scripts/release
       fi
   artifacts:
     paths:
-      - dist-accel
+      - dist
 
 # Run a fast, version-sensitive subset on Python 3.11 / 3.12 / 3.13 (uv provisions each
-# interpreter, tox-uv drives it) so version-specific breakage is caught. Kept to a subset
-# because the full suite 3x would overwhelm the memory-limited runner; `make tox` locally
-# runs everything. Hard gate -- proven stable on the runner.
+# interpreter, tox-uv drives it) so version-specific breakage is caught. Kept to a subset because
+# the full suite 3x would overwhelm the memory-limited runner; `make tox` locally runs everything.
+# Needs Rust because installing fastumap now compiles the extension. Hard gate.
 test-matrix:
   image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
   needs: []
   variables:
     UV_LINK_MODE: copy
   before_script:
-    - apt-get update && apt-get install -y --no-install-recommends git libatomic1
+    - apt-get update && apt-get install -y --no-install-recommends git libatomic1 build-essential curl ca-certificates
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+    - . "$HOME/.cargo/env"
     - uv python install 3.11 3.12 3.13
     - uv sync --frozen
   script:
+    - . "$HOME/.cargo/env"
     - uv run tox -- tests/test_projection.py tests/test_find_ab_params.py tests/test_no_heavy_deps.py tests/test_version.py tests/test_import_cost.py

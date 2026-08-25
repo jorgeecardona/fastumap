@@ -83,14 +83,15 @@ def main() -> None:
     from fastumap.clustering import kmeans as np_kmeans
 
     try:
-        import fastumap_accel  # the compiled path
+        import importlib
 
+        accel = importlib.import_module("fastumap._accel")  # the compiled kernels, built in
         t = time.perf_counter()
-        labels = fastumap_accel.kmeans(np.ascontiguousarray(x), args.k, args.iter, 42)
+        labels = accel.kmeans(np.ascontiguousarray(x), args.k, args.iter, 42)
         dt = time.perf_counter() - t
         print(f"accel  k-means: {dt:6.2f}s  inertia={_inertia(x, labels, args.k):.3e}")
     except ImportError:
-        print("accel  k-means: (fastumap_accel not installed)")
+        print("accel  k-means: (native kernel not built)")
 
     if args.n <= 200_000:  # the numpy path is far slower; only time it on a tractable slice
         t = time.perf_counter()

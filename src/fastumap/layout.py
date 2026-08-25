@@ -16,23 +16,25 @@ from ._types import FloatArray, IntArray
 from .graph import FuzzyGraph, make_epochs_per_sample
 
 try:
-    # Optional native accelerator (`pip install fastumap-accel`): a Rust reimplementation
-    # of the SGD that does umap-learn's true in-place walk — faster and higher quality.
-    # Absent by default; the pure-numpy path below is the fallback. Imported dynamically so
-    # the type checker doesn't resolve a compiled, stub-less module that may not be present.
-    _accel_optimize = importlib.import_module("fastumap_accel").optimize_layout
+    # Native accelerator, built into the package as the compiled `fastumap._accel` submodule: a
+    # Rust reimplementation of the SGD that does umap-learn's true in-place walk — faster and
+    # higher quality. The pure-numpy path below is the fallback for an sdist build without Rust.
+    # Imported dynamically so the type checker doesn't resolve a compiled, stub-less module.
+    _accel_optimize = importlib.import_module("fastumap._accel").optimize_layout
 except ImportError:
     _accel_optimize = None
 
 
 def accelerator_active() -> bool:
-    """Whether the native ``fastumap-accel`` SGD kernel is installed and will be used.
+    """Whether the native ``fastumap._accel`` SGD kernel is present and will be used.
 
-    Analogous to ``torch.cuda.is_available()``. The accelerator does umap-learn's true
-    in-place walk, so it produces a *different* (higher-quality) layout than the pure-numpy
-    fallback for the same seed. Output is reproducible within one environment; installing or
-    removing ``fastumap-accel`` changes it. Use this to record which path produced a stored
-    projection. (The default path uses it whenever present; ``chunk_count > 1`` forces numpy.)
+    Analogous to ``torch.cuda.is_available()``. The kernel is compiled into the wheel, so this is
+    normally ``True``; it is ``False`` only when the extension is not present — an unbuilt source
+    checkout — in which case the pure-numpy path runs. The kernel does umap-learn's true in-place
+    walk, so it produces a *different* (higher-quality) layout than the numpy fallback for the same
+    seed.
+    Use this to record which path produced a stored projection. (The default path uses it whenever
+    present; ``chunk_count > 1`` forces numpy.)
     """
     return _accel_optimize is not None
 

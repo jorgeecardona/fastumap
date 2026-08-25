@@ -22,12 +22,14 @@ tasks:
 
   test:
     command: 'uv run pytest'
-    inputs: ['src/**/*.py', 'tests/**/*.py', 'pyproject.toml']
+    # rust/** is an input: the compiled kernel is part of the package, so a Rust change must
+    # re-run the suite (uv sync rebuilds fastumap._accel via maturin).
+    inputs: ['src/**/*.py', 'tests/**/*.py', 'rust/**/*.rs', 'rust/Cargo.toml', 'pyproject.toml']
 
   build:
     command: 'uv build --out-dir dist'
     deps: ['~:test']
-    inputs: ['src/**/*.py', 'pyproject.toml', 'README.md', 'LICENSE']
+    inputs: ['src/**/*.py', 'rust/**/*.rs', 'rust/Cargo.toml', 'pyproject.toml', 'README.md', 'LICENSE']
     outputs: ['dist']
 
   # CI-side enforcement of "a src/ change carries a version bump".
@@ -36,7 +38,9 @@ tasks:
     options:
       cache: false
 
-  # The single aggregate gate: the whole CI check graph in one target.
+  # The single aggregate gate: the whole CI check graph in one target. The wheel build is NOT a
+  # dep here — the CI job builds the maturin wheels (x86_64 + aarch64 + sdist) explicitly in its
+  # script, on every branch, so a build break is still caught.
   ci:
     command: 'noop'
     deps:
@@ -44,7 +48,6 @@ tasks:
       - '~:format-check'
       - '~:typecheck'
       - '~:test'
-      - '~:build'
       - '~:version-guard'
 
   # Mint a PyPI OIDC token and upload dist/*. Invoked by release (or by hand).

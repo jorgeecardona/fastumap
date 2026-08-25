@@ -32,8 +32,10 @@ logs/
 # Cached benchmark datasets (MNIST etc.)
 /bench/data/
 
-# Rust accelerator build artifacts
+# Rust extension build artifacts
 /rust/target/
+# maturin's editable/develop build drops the compiled extension into the package tree
+src/fastumap/*.so
 
 # Local agent wiring: names the cabildo issues MCP, not a package dependency.
 # docs/issues/ IS tracked — the register is plain markdown.

@@ -1,8 +1,8 @@
 # fastumap
 
 A UMAP and clustering library built for one thing: **importing it costs milliseconds, not
-seconds** — nothing compiles when you import it. Mostly NumPy and SciPy, with optional
-precompiled native kernels (a small Rust wheel) for speed at scale.
+seconds** — nothing compiles when you import it. Mostly NumPy and SciPy, with precompiled native
+kernels (Rust, built into the wheel) for speed at scale.
 
 | | cold import | added to image |
 |---|---:|---:|
@@ -18,8 +18,7 @@ left to compile at import time.
 ## Installation
 
 ```bash
-pip install fastumap                 # NumPy and SciPy only
-pip install fastumap[accel]          # adds the optional native accelerator (see below)
+pip install fastumap                 # one wheel — native kernels included
 pip install fastumap[ann]            # adds an approximate kNN backend for large inputs (see below)
 ```
 
@@ -60,8 +59,9 @@ implementation is the source. See umap-learn's [supervised docs](https://umap-le
 
 ## Clustering
 
-`cluster` groups points directly — implemented in pure numpy+scipy, with no external clustering
-library. It does **not** compute a 2-D layout first: that layout is an iterative SGD and takes
+`cluster` groups points directly — implemented ourselves (numpy and scipy plus the native k-means
+kernel), with no external clustering library. It does **not** compute a 2-D layout first: that
+layout is an iterative SGD and takes
 minutes at a million points, and clustering doesn't need it.
 
 ```python
@@ -78,10 +78,10 @@ constraint at scale. `spectral` reuses fastumap's own normalised-eigenvector mac
 k-means those. For a picture, call `umap_project` separately (usually on a sample) — clustering
 and visualisation are different jobs.
 
-For large inputs the optional `fastumap-accel` wheel replaces the k-means inner loop with a
-native kernel (matrixmultiply SIMD GEMM + rayon over row-blocks): it clusters **1,000,000 × 128
-into 64 groups in ~10 s** on a 16-core machine (measured on SIFT1M), versus minutes for the numpy
-path, and engages automatically above 50k points when installed. That is a **multi-core batch**
+For large inputs fastumap's native k-means kernel — compiled into the wheel (matrixmultiply SIMD
+GEMM + rayon over row-blocks) — replaces the inner loop: it clusters **1,000,000 × 128 into 64
+groups in ~10 s** on a 16-core machine (measured on SIFT1M), versus minutes for the numpy path,
+and engages automatically above 50k points. That is a **multi-core batch**
 figure — on a throttled container (0.5–2 vCPU) the same job is CPU-bound and takes far longer, so
 run clustering on a real machine, not a fractional-vCPU serving box.
 
@@ -159,12 +159,15 @@ any new rows). A cached 5000×1024 model occupies about 20 MB (training data sto
 Rolling windows and sparse input are not supported — densify sparse input first, and refit when
 the window slides.
 
-## The optional accelerator
+## The native accelerator
 
-`fastumap-accel` is a small Rust reimplementation of the SGD, distributed as a separate abi3
-wheel (Python 3.11+; x86_64 and aarch64/Graviton, with an sdist for other platforms). When it
-is installed, fastumap uses it automatically; the base package remains pure NumPy and SciPy and
-serves as the fallback. It is roughly 1.7–1.9× faster with slightly higher overlap.
+fastumap ships a compiled Rust extension (`fastumap._accel`) **inside the wheel** — a
+reimplementation of the SGD layout kernel and the k-means kernel. The prebuilt wheels (abi3,
+Python 3.11+; Linux x86_64 and aarch64/Graviton) carry it, so it is used automatically. On a
+platform without a prebuilt wheel, pip builds from the sdist, which needs a Rust toolchain. The
+NumPy path remains as a runtime fallback — if the extension is ever not present (for instance an
+unbuilt source checkout), fastumap still works, just slower. The SGD kernel is roughly 1.7–1.9×
+faster with slightly higher overlap.
 
 Because it performs umap-learn's true in-place walk rather than the fallback's per-epoch
 approximation, it produces a **different — higher-quality — layout for the same seed.** Query
@@ -172,7 +175,7 @@ the active path with:
 
 ```python
 import fastumap
-fastumap.accelerator_active()   # True if the native kernel is installed and will be used
+fastumap.accelerator_active()   # True if the native kernel is present (the normal case)
 ```
 
 ## Large inputs (approximate kNN)
@@ -199,11 +202,12 @@ against exact. Measured on the neighbour search alone (256-dim):
 `fastumap.ann_available()` reports whether the backend is installed.
 
 For a given input and seed, output is bit-identical across processes and machines within one
-environment. Two optional packages change the layout, so reproducibility *across* environments
-requires pinning them: `fastumap-accel` (a different optimiser) and `fastumap[ann]` (an
-approximate neighbour graph above 16k points). Treat them as part of the environment's
-dependency set; `accelerator_active()` and `ann_available()` report which paths a run used, so a
-stored projection can record how it was produced.
+environment. Two things change the layout across *different* environments: whether the native
+kernel is present (the wheels carry it and it is used by default, but a run that falls back to the
+numpy optimiser — an unbuilt source checkout — differs) and `fastumap[ann]` (an approximate
+neighbour graph above 16k points). Treat both as part of the environment's dependency set;
+`accelerator_active()` and `ann_available()` report which paths a run used, so a stored projection
+can record how it was produced.
 
 ## Guarantees
 

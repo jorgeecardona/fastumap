@@ -30,9 +30,10 @@ _BLOCK = 4096  # rows per block in the assignment step; bounds peak memory to bl
 _ACCEL_MIN = 50_000  # below this the numpy path is fast and deterministic; above, use the accel
 
 try:
-    # Optional native k-means (part of fastumap-accel): a matrixmultiply-GEMM + rayon Lloyd that
-    # clusters 1M x 128 in ~10s vs the numpy path's minutes. Same API; different (f32) results.
-    _accel_kmeans = importlib.import_module("fastumap_accel").kmeans
+    # Native k-means, built into the package as fastumap._accel: a matrixmultiply-GEMM + rayon
+    # Lloyd that clusters 1M x 128 in ~10s (multi-core) vs the numpy path's minutes. Same API;
+    # different (f32) results. Falls back to numpy only if the extension is absent (unbuilt checkout).
+    _accel_kmeans = importlib.import_module("fastumap._accel").kmeans
 except (ImportError, AttributeError):
     _accel_kmeans = None
 
@@ -117,7 +118,7 @@ def kmeans(
 ) -> tuple[IntArray, FloatArray]:
     """Lloyd's k-means with k-means++ init. Returns ``(labels, centroids)``.
 
-    Uses the native fastumap-accel kernel above ``_ACCEL_MIN`` points when it is installed
+    Uses the built-in native kernel (fastumap._accel) above ``_ACCEL_MIN`` points when present
     (~10s at 1M x 128 vs minutes for numpy); otherwise the pure-numpy path here, which is
     deterministic to the byte. Both converge to the same objective within the usual tolerance.
     """

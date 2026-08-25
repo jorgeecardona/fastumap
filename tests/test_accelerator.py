@@ -11,7 +11,7 @@ def test_returns_bool_matching_install() -> None:
     # It must agree with whether the compiled kernel actually imports — the same dynamic
     # import layout.py uses to pick the SGD path.
     try:
-        importlib.import_module("fastumap_accel")
+        importlib.import_module("fastumap._accel")
         imported = True
     except ImportError:
         imported = False
