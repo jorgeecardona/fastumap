@@ -1,15 +1,13 @@
 # pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportUnknownLambdaType=false, reportAttributeAccessIssue=false, reportArgumentType=false
 """Typed shims over the untyped scipy functions fastumap uses.
 
-scipy ships no type stubs, so every call into it is `Unknown` under pyright strict.
-Rather than scatter `# pyright: ignore` across the algorithm modules, every scipy
-call lives here behind a precisely-typed signature; the file-level pragma above
-confines the resulting "unknown type" noise to this one shim. Callers see only
-numpy arrays and plain scalars.
+scipy ships no type stubs. So every call into it is `Unknown` under pyright strict.
+Instead of scattering `# pyright: ignore` across the algorithm modules, every scipy call
+lives here behind a precisely-typed signature. The file-level pragma above confines the
+"unknown type" noise to this one shim. Callers see only numpy arrays and plain scalars.
 
-scipy submodules are imported lazily inside each function so that `import fastumap`
-(and even `import fastumap.projection`) never pays scipy's import cost until a
-projection actually runs.
+scipy submodules are imported lazily inside each function. So `import fastumap` (and even
+`import fastumap.projection`) never pays scipy's import cost until a projection actually runs.
 """
 
 from __future__ import annotations
@@ -28,9 +26,9 @@ def fuzzy_union(
 ) -> tuple[IntArray, IntArray, FloatArray]:
     """Symmetrise a directed membership edge list by the fuzzy set union.
 
-    Computes ``W + Wt - W∘Wt`` (for ``set_op_mix_ratio == 1``), the probabilistic
-    t-conorm UMAP uses — not an elementwise maximum. Returns the resulting
-    symmetric graph as COO arrays with structural zeros removed.
+    Computes ``W + Wt - W∘Wt`` (for ``set_op_mix_ratio == 1``). This is the probabilistic
+    t-conorm UMAP uses, not an elementwise maximum. Returns the symmetric graph as COO
+    arrays, with structural zeros removed.
     """
     from scipy import sparse
 
@@ -54,8 +52,8 @@ def reset_local_connectivity(
 ) -> tuple[IntArray, IntArray, FloatArray]:
     """umap-learn's ``reset_local_connectivity``: row-max-normalise, then fuzzy-union.
 
-    Divides each row by its largest entry (restoring a 1.0 membership for every point's
-    strongest edge after the supervised attenuation), then re-symmetrises with the
+    Divides each row by its largest entry. That restores a 1.0 membership for every point's
+    strongest edge, after the supervised attenuation. Then re-symmetrises with the
     probabilistic t-conorm ``A + At - A∘At``. Structural zeros are dropped.
     """
     from scipy import sparse
@@ -113,9 +111,9 @@ def normalized_adjacency_eigenvectors(
 ) -> tuple[FloatArray, FloatArray]:
     """Leading ``k`` eigenpairs of the normalised adjacency ``D^-1/2 W D^-1/2``.
 
-    Taking the *largest* eigenvectors of the normalised adjacency avoids the
-    shift-invert factorisation that finding the *smallest* eigenvectors of the
-    Laplacian would need. ``v0`` is pinned so ARPACK is bit-reproducible.
+    We take the *largest* eigenvectors of the normalised adjacency. This avoids a
+    shift-invert factorisation. Finding the *smallest* eigenvectors of the Laplacian would
+    need one. ``v0`` is pinned so ARPACK is bit-reproducible.
     """
     from scipy import sparse
     from scipy.sparse.linalg import eigsh

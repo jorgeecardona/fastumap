@@ -1,10 +1,13 @@
 # fastumap native kernels (`fastumap._accel`)
 
-The compiled Rust extension built into [fastumap](https://gitlab.com/jorgeecardona/fastumap): the
-SGD layout kernel (`optimize_layout`) and the k-means kernel (`kmeans`), built as a Python
-extension with PyO3 and maturin and shipped **inside the fastumap wheel** — there is no separate
-package. On a platform with a prebuilt wheel it is always present; from an sdist it needs a Rust
-toolchain to compile, and without one fastumap falls back to its pure-NumPy path.
+The compiled Rust extension built into [fastumap](https://gitlab.com/jorgeecardona/fastumap). Two
+kernels: the SGD layout (`optimize_layout`) and k-means (`kmeans`). Built with PyO3 + maturin,
+shipped **inside the fastumap wheel** — no separate package.
+
+- Prebuilt wheel for your platform: the kernel is always there.
+- sdist (no wheel): needs a Rust toolchain to compile. Without one, fastumap falls back to the
+  pure-NumPy path.
+
 `fastumap.accelerator_active()` reports which path is in use.
 
 ## Rationale
@@ -14,10 +17,10 @@ toolchain to compile, and without one fastumap falls back to its pure-NumPy path
 - **Fast cold start.** The extension is a small `.so` that imports in milliseconds — no runtime
   JIT and no 172 MB of llvmlite — so it preserves fastumap's fast import even on a
   fractional-vCPU host. Prebuilt wheels cover x86_64 and aarch64/Graviton.
-- **Fidelity.** It performs umap-learn's true in-place (Hogwild) edge walk, which the NumPy path
-  only approximates with a per-epoch snapshot — yielding both higher speed and slightly higher
-  overlap. Consequently it produces a different (higher-quality) layout than the NumPy fallback
-  for the same seed; see fastumap's Reproducibility section.
+- **Fidelity.** It does umap-learn's true in-place (Hogwild) edge walk. The NumPy path only
+  approximates that with a per-epoch snapshot. So the kernel is both faster and slightly higher
+  overlap — and it gives a different (better) layout than the NumPy fallback for the same seed.
+  See fastumap's Reproducibility section.
 
 ## Benchmarks
 

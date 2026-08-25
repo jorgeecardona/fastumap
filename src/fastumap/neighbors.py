@@ -1,15 +1,14 @@
 """k-nearest-neighbour graph by blocked brute force.
 
 Exact kNN, computed one row-block at a time so the n-by-n distance matrix is never
-materialised: at 5000 points that matrix would be 100MB and its argpartition index
-another 200MB. Blocking bounds peak memory to block_size-by-n. Brute force is the right
-call below ~10k points and needs no NN-descent dependency; above that, use the
-approximate backend (roadmap #15).
+materialised. At 5000 points that matrix would be 100MB and its argpartition index another
+200MB. Blocking bounds peak memory to block_size-by-n. Brute force is the right call below ~10k
+points and needs no NN-descent dependency. Above that, use the approximate backend (roadmap #15).
 
-Two metrics: ``euclidean`` (default) and ``cosine`` — the latter is what text/CLS
-embeddings usually want, since euclidean on unnormalised encoder output is rarely the
-structure you care about. ``knn_between`` finds neighbours of one set inside another,
-which is what ``transform`` needs to place new points against a fitted training set.
+Two metrics: ``euclidean`` (default) and ``cosine``. Cosine is what text/CLS embeddings usually
+want, since euclidean on unnormalised encoder output is rarely the structure you care about.
+``knn_between`` finds neighbours of one set inside another. That is what ``transform`` needs to
+place new points against a fitted training set.
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ import numpy as np
 from ._types import FloatArray, IntArray
 
 # Below this many points the exact blocked kNN is still fast (and bit-identical), so `knn="auto"`
-# keeps it; above it the O(n^2) kNN dominates and approximate wins clearly (measured ~2.4x at
+# keeps it. Above it the O(n^2) kNN dominates and approximate wins clearly (measured ~2.4x at
 # 20k, ~2.8x at 30k), so auto switches to the fastumap[ann] backend when it is installed.
 _ANN_MIN = 16384
 
@@ -37,9 +36,9 @@ def _knn_from_tiles(
 ) -> tuple[IntArray, FloatArray]:
     """Assemble a kNN graph from per-block distance tiles.
 
-    ``tile(start, stop)`` returns the non-negative ``(stop-start, n_ref)`` distances from
-    query rows ``[start:stop]`` to every reference row. Returned distances are the metric's
-    own (squared or not); callers transform them if needed. Ties break by index.
+    ``tile(start, stop)`` returns the non-negative ``(stop-start, n_ref)`` distances from query
+    rows ``[start:stop]`` to every reference row. Returned distances are the metric's own (squared
+    or not). Callers transform them if needed. Ties break by index.
     """
     if n_neighbors < 1:
         raise ValueError("n_neighbors must be >= 1")
@@ -167,7 +166,7 @@ def knn_approx(
 
     Output matches the exact path's contract: euclidean distance for ``"euclidean"``,
     ``1 - cosine similarity`` for ``"cosine"``, self in column 0 (distance 0), nearest first.
-    Deterministic run-to-run (single-threaded build). Requires ``pip install fastumap[ann]``;
+    Deterministic run-to-run (single-threaded build). Requires ``pip install fastumap[ann]``. It
     raises :class:`ImportError` with that hint otherwise.
     """
     if metric == "cosine":
@@ -209,10 +208,11 @@ def knn_graph(
 ) -> tuple[IntArray, FloatArray]:
     """Self-kNN, exact or approximate per ``mode``.
 
-    ``"exact"`` always uses the blocked brute force (bit-identical, the default). ``"approx"``
-    always uses the faiss HNSW backend (errors if ``fastumap[ann]`` is absent). ``"auto"`` uses
-    approximate only when the backend is installed *and* ``n >= 16384`` — otherwise exact, so
-    small inputs stay bit-identical and nothing changes unless you opted into the extra.
+    - ``"exact"`` always uses the blocked brute force (bit-identical, the default).
+    - ``"approx"`` always uses the faiss HNSW backend (errors if ``fastumap[ann]`` is absent).
+    - ``"auto"`` uses approximate only when the backend is installed *and* ``n >= 16384``.
+      Otherwise exact, so small inputs stay bit-identical and nothing changes unless you opted
+      into the extra.
     """
     if mode == "exact":
         return knn(matrix, n_neighbors, metric=metric, block_size=block_size)

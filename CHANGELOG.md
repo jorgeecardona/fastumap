@@ -5,6 +5,15 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-08-25
+
+### Changed
+- Documentation pass over everything a human reads: the README, rust/README, and every module and
+  function docstring and comment across `src/fastumap/` and the Rust kernel. Dense run-on prose is
+  broken into short sentences and scannable bullets, in simpler technical English. Every fact,
+  number, and caveat is kept verbatim; no code changed. Also removed a stale "unbuilt scaffold"
+  note from `lib.rs`.
+
 ## [0.2.7] - 2026-08-25
 
 ### Added

@@ -1,21 +1,23 @@
-"""Clustering, implemented ourselves — numpy + scipy with a built-in native k-means kernel, no
+"""Clustering, implemented ourselves. numpy + scipy plus a built-in native k-means kernel. No
 third-party clustering library.
 
-fastumap reimplements UMAP from scratch; clustering is the same. ``cluster()`` deliberately does
-NOT compute a 2-D/3-D layout first (that layout is an iterative SGD and takes minutes at a million
-points; clustering does not need it). Two methods, both ours:
+fastumap reimplements UMAP from scratch. Clustering is the same. ``cluster()`` does NOT compute
+a 2-D/3-D layout first. That layout is an iterative SGD and takes minutes at a million points.
+Clustering does not need it.
+
+Two methods, both ours:
 
 - ``method="kmeans"`` — k-means (k-means++ seeding, Lloyd iterations, blocked assignment so the
-  n-by-k distance matrix is never materialised). Fastest; you pick ``n_clusters``. Above ~50k
-  points it routes through the built-in native kernel (``fastumap._accel``) — ~10 s at 1M x 128 —
-  and otherwise the deterministic numpy path here.
-- ``method="spectral"`` — spectral clustering: build the fuzzy kNN graph, take the leading
-  normalised-adjacency eigenvectors (fastumap's own spectral machinery), and k-means those. Finds
+  n-by-k distance matrix is never materialised). Fastest. You pick ``n_clusters``. Above ~50k
+  points it routes through the built-in native kernel (``fastumap._accel``): ~10 s at 1M x 128.
+  Below that, the deterministic numpy path here.
+- ``method="spectral"`` — spectral clustering. Build the fuzzy kNN graph. Take the leading
+  normalised-adjacency eigenvectors (fastumap's own spectral machinery). k-means those. Finds
   non-convex clusters k-means alone misses. Needs ``fastumap[ann]`` only above ~16k points, where
   the kNN switches to the approximate backend.
 
 Everything here is float32-friendly and blocked, so it holds to the low-memory / low-CPU
-constraints; the best shape at 1M (iteration count, a compiled k-means kernel) is a tuning
+constraints. The best shape at 1M (iteration count, a compiled k-means kernel) is a tuning
 question to settle against a benchmark.
 """
 
@@ -34,7 +36,7 @@ _ACCEL_MIN = 50_000  # below this the numpy path is fast and deterministic; abov
 
 try:
     # Native k-means, built into the package as fastumap._accel: a matrixmultiply-GEMM + rayon
-    # Lloyd that clusters 1M x 128 in ~10s (multi-core) vs the numpy path's minutes. Same API;
+    # Lloyd. Clusters 1M x 128 in ~10s (multi-core) vs the numpy path's minutes. Same API,
     # different (f32) results. Falls back to numpy only if the extension is absent (unbuilt checkout).
     _accel_kmeans = importlib.import_module("fastumap._accel").kmeans
 except (ImportError, AttributeError):
@@ -50,10 +52,10 @@ def _unit_rows(x: FloatArray) -> FloatArray:
 class ClusterResult:
     """What ``cluster(..., return_centroids=True)`` returns.
 
-    ``centroids`` and ``inertia`` are in the space the clustering ran in — the input space, or
-    unit-normalised rows for ``metric="cosine"``. ``inertia`` is the k-means objective (the sum of
-    squared distances from each point to its assigned centroid); lower is tighter, and it is the
-    number to compare across ``n_clusters`` when picking k.
+    ``centroids`` and ``inertia`` are in the space the clustering ran in: the input space, or
+    unit-normalised rows for ``metric="cosine"``. ``inertia`` is the k-means objective, the sum of
+    squared distances from each point to its assigned centroid. Lower is tighter. It is the number
+    to compare across ``n_clusters`` when picking k.
     """
 
     labels: IntArray
@@ -109,12 +111,12 @@ def cluster(
 ) -> IntArray | ClusterResult:
     """Cluster ``embeddings`` ``(n, d)`` into integer labels ``(n,)``.
 
-    ``method`` is ``"kmeans"`` or ``"spectral"``; both take ``n_clusters``. ``metric`` is
+    ``method`` is ``"kmeans"`` or ``"spectral"``. Both take ``n_clusters``. ``metric`` is
     ``"euclidean"`` or ``"cosine"`` (cosine unit-normalises the rows). Deterministic given
-    ``random_state``. Does NOT compute a layout — for a picture call ``umap_project`` separately.
+    ``random_state``. Does NOT compute a layout. For a picture, call ``umap_project`` separately.
 
     With ``return_centroids=True`` the return is a :class:`ClusterResult` (labels, centroids,
-    inertia) instead of just labels, so you can compare runs or pick ``n_clusters`` by inertia
+    inertia) instead of just labels. So you can compare runs or pick ``n_clusters`` by inertia
     without a second pass.
     """
     x = np.ascontiguousarray(embeddings, dtype=np.float64)
@@ -142,13 +144,13 @@ def cluster(
 def assign_clusters(
     embeddings: FloatArray, centroids: FloatArray, *, metric: str = "euclidean"
 ) -> IntArray:
-    """Assign each row of ``embeddings`` to its nearest of ``centroids`` — the *predict* half of a
-    fit/predict split, so new points get labels without re-clustering.
+    """Assign each row of ``embeddings`` to its nearest of ``centroids``. This is the *predict*
+    half of a fit/predict split. New points get labels without re-clustering.
 
-    ``centroids`` come from a prior ``cluster(..., return_centroids=True)`` or ``kmeans`` run;
+    ``centroids`` come from a prior ``cluster(..., return_centroids=True)`` or ``kmeans`` run.
     ``metric`` must match the one they were fitted with (``"cosine"`` unit-normalises the rows, as
     fitting did). Uses the same blocked nearest-centroid step as ``cluster``, so peak memory is
-    bounded by the block size regardless of how many rows you pass.
+    bounded by the block size, no matter how many rows you pass.
     """
     x = np.ascontiguousarray(embeddings, dtype=np.float64)
     if x.ndim != 2:
@@ -174,13 +176,15 @@ def choose_k(
     random_state: int = 42,
     max_samples: int = 20_000,
 ) -> int:
-    """Pick ``n_clusters`` automatically by the inertia elbow — the "kneedle" knee of the
-    inertia-vs-k curve, i.e. the k past which adding clusters stops buying much tightness.
+    """Pick ``n_clusters`` automatically by the inertia elbow. This is the "kneedle" knee of the
+    inertia-vs-k curve: the k past which adding clusters stops buying much tightness.
 
     Runs k-means for each ``k`` in ``[k_min, k_max]`` and returns the elbow. On more than
     ``max_samples`` rows it searches on a deterministic random subsample to bound the cost (the
-    returned k still applies to the full data). It is a heuristic: for a clear cluster structure it
-    lands on the true k give or take one; for gradual structure treat it as a starting point.
+    returned k still applies to the full data).
+
+    It is a heuristic. For a clear cluster structure it lands on the true k give or take one. For
+    gradual structure, treat it as a starting point.
     """
     x = np.ascontiguousarray(embeddings, dtype=np.float64)
     if x.ndim != 2:
@@ -266,7 +270,7 @@ def kmeans(
     """Lloyd's k-means with k-means++ init. Returns ``(labels, centroids)``.
 
     Uses the built-in native kernel (fastumap._accel) above ``_ACCEL_MIN`` points when present
-    (~10s at 1M x 128 vs minutes for numpy); otherwise the pure-numpy path here, which is
+    (~10s at 1M x 128 vs minutes for numpy). Otherwise the pure-numpy path here, which is
     deterministic to the byte. Both converge to the same objective within the usual tolerance.
     """
     if n_clusters < 1:

@@ -25,9 +25,8 @@ MIN_K_DIST_SCALE = 1e-3
 class FuzzyGraph:
     """A symmetric weighted graph on ``n`` vertices, held as a COO edge list.
 
-    head/tail/weight are parallel arrays over edges. This is the single data
-    structure the layout stage consumes, which keeps scipy's sparse types out of
-    the rest of the codebase.
+    head/tail/weight are parallel arrays over edges. This is the single data structure the layout
+    stage consumes. That keeps scipy's sparse types out of the rest of the codebase.
     """
 
     n: int
@@ -46,13 +45,14 @@ def smooth_knn_dist(
 ) -> tuple[FloatArray, FloatArray]:
     """Per-point ``(sigma, rho)``.
 
-    ``rho_i`` is the distance to the nearest neighbour with positive distance (so
-    every point keeps one edge at full weight and nothing is isolated).
-    ``sigma_i`` is binary-searched so ``sum_j exp(-(d_ij - rho_i)/sigma_i) = log2(k)``,
-    then floored at ``MIN_K_DIST_SCALE`` times the local mean distance.
+    ``rho_i`` is the distance to the nearest neighbour with positive distance. So every point
+    keeps one edge at full weight and nothing is isolated.
 
-    Only ``local_connectivity == 1.0`` (the UMAP default) is matched exactly; the
-    argument is accepted for signature parity.
+    ``sigma_i`` is binary-searched so ``sum_j exp(-(d_ij - rho_i)/sigma_i) = log2(k)``, then
+    floored at ``MIN_K_DIST_SCALE`` times the local mean distance.
+
+    Only ``local_connectivity == 1.0`` (the UMAP default) is matched exactly. The argument is
+    accepted for signature parity.
     """
     _ = local_connectivity
     n = knn_dists.shape[0]
@@ -69,8 +69,8 @@ def smooth_knn_dist(
     offset = knn_dists[:, 1:] - rho[:, None]  # skip self column, like umap-learn
 
     for _iteration in range(n_iter):
-        # Exponentiate only the kept elements: put 0.0 in the discarded (offset <= 0) slots so
-        # exp gives 1.0 there — bit-identical to the old np.where(..., exp(...), 1.0) but without
+        # Exponentiate only the kept elements. Put 0.0 in the discarded (offset <= 0) slots so
+        # exp gives 1.0 there. Bit-identical to the old np.where(..., exp(...), 1.0), but it skips
         # computing exp on the discarded slots, where -offset/mid is large positive and overflows.
         val = np.exp(np.where(offset > 0.0, -offset / mid[:, None], 0.0))
         psum = val.sum(axis=1)
@@ -106,15 +106,16 @@ def compute_membership(
 ) -> tuple[IntArray, IntArray, FloatArray]:
     """Directed edge weights ``exp(-(d - rho)/sigma)``, clamped to 1 when d <= rho.
 
-    Returns COO arrays ``(rows, cols, data)``. With ``exclude_self`` (self-kNN), edges
-    where a point is its own neighbour are set to weight 0, matching umap-learn. For
-    ``transform`` the neighbours come from a *different* set (the training data), so index
-    equality is coincidental and ``exclude_self=False`` keeps those edges.
+    Returns COO arrays ``(rows, cols, data)``. With ``exclude_self`` (self-kNN), edges where a
+    point is its own neighbour are set to weight 0, matching umap-learn.
+
+    For ``transform`` the neighbours come from a *different* set (the training data). So index
+    equality is coincidental, and ``exclude_self=False`` keeps those edges.
     """
     n, k = knn_indices.shape
     offset = knn_dists - rho[:, None]
-    # np.where evaluates both branches, so clamp the exponent's argument at 0 before the
-    # exp: where offset <= 0 the result is discarded anyway, and this avoids a spurious
+    # np.where evaluates both branches, so clamp the exponent's argument at 0 before the exp.
+    # Where offset <= 0 the result is discarded anyway. This avoids a spurious
     # `overflow encountered in exp` warning (-offset can be large positive there).
     weight = np.exp(-np.maximum(offset, 0.0) / sigma[:, None])
     vals = np.where(offset <= 0.0, 1.0, weight)
@@ -148,17 +149,22 @@ def categorical_intersection(
     """Categorical supervised UMAP: fold class labels ``y`` into the fuzzy graph.
 
     Ported from umap-learn 0.5.12 (``discrete_metric_simplicial_set_intersection`` /
-    ``fast_intersection`` / ``reset_local_connectivity``); the theory paper (arXiv:1802.03426)
+    ``fast_intersection`` / ``reset_local_connectivity``). The theory paper (arXiv:1802.03426)
     proposes only the simplicial-set-intersection idea as future work (Sec. 7), so the reference
     implementation is the authority here. See umap-learn's "Supervised Dimension Reduction and
     Metric Learning" docs and McInnes et al., JOSS 3(29):861.
 
-    Same-label edges are kept; edges between different labels are multiplied by
-    ``exp(-far_dist)`` with ``far_dist = 2.5 / (1 - target_weight)`` (edges are removed outright
-    when ``target_weight >= 1``); edges touching an unlabelled point (``y == -1``) are multiplied
-    by ``exp(-1)`` (semi-supervised). The attenuated graph is then row-max-normalised and
-    re-symmetrised. ``target_weight`` is in ``[0, 1]`` (default 0.5): 0.0 pushes classes apart the
-    least, 1.0 severs every inter-class edge.
+    How the edge weights change:
+
+    - Same-label edges are kept.
+    - Edges between different labels are multiplied by ``exp(-far_dist)``, with
+      ``far_dist = 2.5 / (1 - target_weight)``. When ``target_weight >= 1`` these edges are
+      removed outright.
+    - Edges touching an unlabelled point (``y == -1``) are multiplied by ``exp(-1)``
+      (semi-supervised).
+
+    The attenuated graph is then row-max-normalised and re-symmetrised. ``target_weight`` is in
+    ``[0, 1]`` (default 0.5): 0.0 pushes classes apart the least, 1.0 severs every inter-class edge.
     """
     if y.shape[0] != graph.n:
         raise ValueError(f"y must have one label per point ({graph.n}), got {y.shape[0]}")
@@ -191,7 +197,7 @@ def make_epochs_per_sample(weights: FloatArray, n_epochs: int) -> FloatArray:
     positive = n_samples > 0.0
     with np.errstate(over="ignore"):
         result[positive] = float(n_epochs) / n_samples[positive]
-    # A denormal weight makes the reciprocal overflow to inf; fall back to the documented -1
+    # A denormal weight makes the reciprocal overflow to inf. Fall back to the documented -1
     # sentinel so the contract holds and we neither warn nor raise under np.seterr(all="raise").
     result[~np.isfinite(result)] = -1.0
     return result

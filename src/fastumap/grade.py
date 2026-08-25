@@ -2,10 +2,10 @@
 
     uv run python -m fastumap.grade [--n 1000] [--seeds 5] [--dim 64] [--clusters 8]
 
-Prints neighbor_overlap@15 and the global pairwise-distance Spearman correlation for
-fastumap, umap-learn, PCA and a random control, as mean +/- std over the seeds. This
-is a dev/bench tool: it imports umap-learn and scikit-learn, which are NOT runtime
-dependencies, so it lives behind the same test/bench extras.
+Prints two numbers per layout: neighbor_overlap@15 and the global pairwise-distance Spearman
+correlation. The layouts are fastumap, umap-learn, PCA and a random control. Each number is a
+mean +/- std over the seeds. This is a dev/bench tool. It imports umap-learn and scikit-learn,
+which are NOT runtime dependencies, so it lives behind the same test/bench extras.
 """
 
 from __future__ import annotations

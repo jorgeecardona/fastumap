@@ -1,12 +1,12 @@
 """fastumap — fast, import-light UMAP and clustering.
 
-The public surface is deliberately small: ``umap_project`` / ``spectral_project`` for layouts,
-``cluster`` / ``assign_clusters`` for clustering, and the grading metrics.
+The public surface is small on purpose. ``umap_project`` / ``spectral_project`` build layouts.
+``cluster`` / ``assign_clusters`` do clustering. There are also the grading metrics.
 
-Imports are lazy on purpose. The whole reason this library exists is import cost, so
+Imports are lazy on purpose too. This library exists to keep import cost low. So
 ``import fastumap`` must not drag in numpy or scipy (or the native kernel) at module load. The
-names below are bound on first access via ``__getattr__``; the ``TYPE_CHECKING`` block gives type
-checkers and IDEs the real signatures without triggering those imports at runtime.
+names below are bound on first access via ``__getattr__``. The ``TYPE_CHECKING`` block gives
+type checkers and IDEs the real signatures, without triggering those imports at runtime.
 """
 
 from __future__ import annotations
@@ -32,9 +32,9 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
-    # pyproject is the single source of truth for the version (like musil); __version__ is
-    # derived from the installed distribution metadata at first access, so it can never
-    # drift from what was published. Declared here for type checkers.
+    # pyproject is the single source of truth for the version (like musil). __version__ is
+    # read from the installed distribution metadata on first access, so it can never drift
+    # from what was published. Declared here for type checkers.
     __version__: str
 
     from .clustering import ClusterResult, assign_clusters, choose_k, cluster

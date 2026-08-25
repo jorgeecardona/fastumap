@@ -1,8 +1,11 @@
 """Initialisation and optimisation of the low-dimensional embedding.
 
-spectral_layout gives the deterministic starting positions (leading eigenvectors of
-the normalised fuzzy graph, guarded against disconnected components); optimize_layout
-runs the attract/repel SGD that UMAP's cross-entropy objective reduces to.
+Two steps:
+
+- spectral_layout gives the deterministic starting positions. These are the leading
+  eigenvectors of the normalised fuzzy graph, guarded against disconnected components.
+- optimize_layout runs the attract/repel SGD. UMAP's cross-entropy objective reduces
+  to that SGD.
 """
 
 from __future__ import annotations
@@ -16,10 +19,10 @@ from ._types import FloatArray, IntArray
 from .graph import FuzzyGraph, make_epochs_per_sample
 
 try:
-    # Native accelerator, built into the package as the compiled `fastumap._accel` submodule: a
-    # Rust reimplementation of the SGD that does umap-learn's true in-place walk — faster and
-    # higher quality. The pure-numpy path below is the fallback for an sdist build without Rust.
-    # Imported dynamically so the type checker doesn't resolve a compiled, stub-less module.
+    # Native accelerator. Built into the package as the compiled `fastumap._accel` submodule.
+    # It is a Rust reimplementation of the SGD. It does umap-learn's true in-place walk: faster
+    # and higher quality. The pure-numpy path below is the fallback for an sdist build without
+    # Rust. Imported dynamically so the type checker doesn't resolve a compiled, stub-less module.
     _accel_optimize = importlib.import_module("fastumap._accel").optimize_layout
 except ImportError:
     _accel_optimize = None
@@ -28,13 +31,15 @@ except ImportError:
 def accelerator_active() -> bool:
     """Whether the native ``fastumap._accel`` SGD kernel is present and will be used.
 
-    Analogous to ``torch.cuda.is_available()``. The kernel is compiled into the wheel, so this is
-    normally ``True``; it is ``False`` only when the extension is not present — an unbuilt source
-    checkout — in which case the pure-numpy path runs. The kernel does umap-learn's true in-place
-    walk, so it produces a *different* (higher-quality) layout than the numpy fallback for the same
-    seed.
-    Use this to record which path produced a stored projection. (The default path uses it whenever
-    present; ``chunk_count > 1`` forces numpy.)
+    Analogous to ``torch.cuda.is_available()``. The kernel is compiled into the wheel, so this
+    is normally ``True``. It is ``False`` only when the extension is not present, e.g. an
+    unbuilt source checkout. Then the pure-numpy path runs instead.
+
+    The kernel does umap-learn's true in-place walk. So it produces a *different*
+    (higher-quality) layout than the numpy fallback for the same seed.
+
+    Use this to record which path produced a stored projection. The default path uses the
+    kernel whenever present; ``chunk_count > 1`` forces numpy.
     """
     return _accel_optimize is not None
 
@@ -46,11 +51,11 @@ _GRAD_CLIP = 4.0
 
 
 def _scatter_add(target: FloatArray, idx: IntArray, values: FloatArray) -> None:
-    """In-place ``target[idx] += values`` accumulating duplicate indices.
+    """In-place ``target[idx] += values``, accumulating duplicate indices.
 
-    Replaces ``np.add.at`` (a slow element-by-element scatter) with one compiled
-    ``np.bincount`` reduction per output dimension. The embedding is only 2-3 dims, so
-    this is a handful of bincounts and dominates the SGD's speed. Deterministic.
+    ``np.add.at`` is a slow element-by-element scatter. This replaces it with one compiled
+    ``np.bincount`` reduction per output dimension. The embedding is only 2-3 dims, so this
+    is a handful of bincounts. It dominates the SGD's speed. Deterministic.
     """
     n, dim = target.shape
     for d in range(dim):
@@ -72,8 +77,8 @@ def _spectral_component(
 ) -> FloatArray:
     """Leading ``dim`` non-trivial eigenvectors of one connected component.
 
-    For a component too small for ARPACK to extract ``dim+1`` eigenpairs, fall back
-    to a deterministic spread along the axes so nothing collapses to a point.
+    A component may be too small for ARPACK to extract ``dim+1`` eigenpairs. Then fall back
+    to a deterministic spread along the axes, so nothing collapses to a point.
     """
     k = dim + 1
     if n <= k + 1:
@@ -98,8 +103,8 @@ def _multi_component_layout(
 ) -> FloatArray:
     """Lay out each connected component on its own, then offset them on a grid.
 
-    Without this, the leading eigenvectors of a disconnected graph are component
-    indicators and each component collapses to a single point.
+    Why: for a disconnected graph the leading eigenvectors are just component indicators.
+    Without this step, each component collapses to a single point.
     """
     n = graph.n
     emb = np.zeros((n, dim), dtype=np.float64)
@@ -152,21 +157,24 @@ def optimize_layout(
 ) -> FloatArray:
     """Attract/repel SGD over the graph edges.
 
-    ``chunk_count`` controls in-epoch feedback. With ``chunk_count <= 1`` (default) every
-    gradient in an epoch is computed from one snapshot and applied together — fully
-    reproducible and the historical behaviour. With ``chunk_count > 1`` the epoch's due
-    edges are shuffled and processed in that many chunks, each computed from the positions
-    the previous chunks already moved — a partial-feedback middle ground between the
-    snapshot update and umap-learn's in-place (Hogwild) walk. Attraction pulls both ends of
-    a due edge; repulsion pushes the head away from ``negative_sample_rate`` uniform
-    samples. Every gradient component is clamped to +/-4.
+    ``chunk_count`` controls in-epoch feedback:
+
+    - ``chunk_count <= 1`` (default): every gradient in an epoch is computed from one
+      snapshot and applied together. Fully reproducible. This is the historical behaviour.
+    - ``chunk_count > 1``: the epoch's due edges are shuffled and processed in that many
+      chunks. Each chunk is computed from the positions the previous chunks already moved.
+      This is a partial-feedback middle ground between the snapshot update and umap-learn's
+      in-place (Hogwild) walk.
+
+    Attraction pulls both ends of a due edge. Repulsion pushes the head away from
+    ``negative_sample_rate`` uniform samples. Every gradient component is clamped to +/-4.
     """
     head = graph.head
     tail = graph.tail
     epochs_per_sample = make_epochs_per_sample(graph.weight, n_epochs)
 
-    # Native fast path: the Rust kernel does the true in-place walk (chunk_count>1's
-    # in-epoch feedback is a numpy-only approximation, so only take it for the default).
+    # Native fast path: the Rust kernel does the true in-place walk. chunk_count>1's in-epoch
+    # feedback is a numpy-only approximation, so only take this path for the default.
     if _accel_optimize is not None and chunk_count <= 1:
         seed = int(rng.integers(0, 2**63 - 1))
         result = _accel_optimize(
@@ -185,7 +193,7 @@ def optimize_layout(
         return np.ascontiguousarray(result, dtype=np.float64)
 
     epoch_of_next = epochs_per_sample.copy()
-    # A copy, not ascontiguousarray: emb is accumulated in place (emb += ...), and an already
+    # A copy, not ascontiguousarray. emb is accumulated in place (emb += ...). An already
     # C-contiguous float64 input (e.g. the caller's `init`) would otherwise be mutated (#15).
     emb = np.array(embedding, dtype=np.float64, order="C")
     n_vertices = emb.shape[0]
@@ -272,9 +280,9 @@ def optimize_transform(
 ) -> FloatArray:
     """Place new points into a fixed layout: only ``new_embedding`` moves.
 
-    Edges run from new points (``head`` indexes ``new_embedding``) to their training
-    neighbours (``tail`` indexes the frozen ``fixed_embedding``). Attraction pulls each
-    new point toward its neighbours; repulsion pushes it from ``negative_sample_rate``
+    Edges run from new points to their training neighbours. ``head`` indexes
+    ``new_embedding``; ``tail`` indexes the frozen ``fixed_embedding``. Attraction pulls
+    each new point toward its neighbours. Repulsion pushes it from ``negative_sample_rate``
     random training points. The training layout never moves, so the picture stays stable.
     """
     epochs_per_sample = make_epochs_per_sample(weight, n_epochs)

@@ -1,16 +1,16 @@
-//! Native SGD layout kernel for fastumap.
+//! Native kernels for fastumap: the SGD layout walk and k-means.
 //!
-//! This is the *in-place* (Hogwild) attract/repel walk that umap-learn's numba kernel does
-//! — later edges in an epoch see earlier moves — which is both faster and more faithful to
-//! umap-learn than the pure-numpy snapshot update. The heavy loop runs with the GIL
-//! released (`py.allow_threads`), so concurrent `asyncio.to_thread` calls run in parallel;
-//! nothing here touches Python objects, and the borrow checker guarantees no data races.
+//! The SGD is the *in-place* (Hogwild) attract/repel walk, the same one umap-learn's numba kernel
+//! does: later edges in an epoch see earlier moves. That is faster and more faithful to umap-learn
+//! than the pure-numpy snapshot update.
+//!
+//! The heavy loop runs with the GIL released (`py.allow_threads`), so concurrent
+//! `asyncio.to_thread` calls run in parallel. Nothing here touches Python objects, and the borrow
+//! checker guarantees no data races.
 //!
 //! Determinism: a seeded SplitMix64 stream drives negative sampling, so a given seed is
-//! reproducible (not bit-identical to the numpy path — different RNG and update order, the
-//! same reason fastumap and umap-learn differ).
-//!
-//! NOTE: unbuilt scaffold. The first `maturin develop` may need minor PyO3 0.22 API tweaks.
+//! reproducible. Not bit-identical to the numpy path — different RNG and update order (the same
+//! reason fastumap and umap-learn differ).
 
 use numpy::{
     IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,
@@ -140,11 +140,13 @@ fn optimize_layout<'py>(
 
 /// k-means (k-means++ seed + Lloyd), the compiled counterpart of `clustering.kmeans`.
 ///
-/// The assignment step is the O(n*k*d) wall. It's computed as a single GEMM
-/// `G = X @ centroidsᵀ` via matrixmultiply's SIMD kernel (nearest centroid = argmin over
-/// `‖c‖² − 2·G[i,·]`, since `‖x‖²` is constant per row), then argmin parallelised over rows with
-/// rayon. All in f32 for SIMD width — clustering tolerates it. Deterministic given `seed` (not
-/// identical to the numpy path: different init RNG and f32). Returns the `(n,)` integer labels.
+/// The assignment step is the O(n*k*d) wall. We compute it as one GEMM: `G = X @ centroidsᵀ`
+/// (matrixmultiply's SIMD kernel). The nearest centroid is then argmin over `‖c‖² − 2·G[i,·]` —
+/// the `‖x‖²` term is constant per row, so it drops out. That argmin runs over rows in parallel
+/// with rayon.
+///
+/// All in f32 for SIMD width — clustering tolerates it. Deterministic given `seed` (not identical
+/// to the numpy path: different init RNG and f32). Returns the `(n,)` integer labels.
 #[pyfunction]
 fn kmeans<'py>(
     py: Python<'py>,

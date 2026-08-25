@@ -1,20 +1,21 @@
 """Cap BLAS threads to the container's CPU allotment, where that allotment is visible.
 
-When a cgroup CFS quota is visible inside the container *and* the container still reports the
-host's full core count, NumPy's BLAS sizes its thread pool to those cores and oversubscribes the
-quota. Under concurrent load — several workers each spawning that many threads against a fraction
-of a vCPU — the threads thrash: measured under ``docker --cpus=0.5`` on a 16-core host with 4
-worker processes, per-call time was ~70 s versus ~42 s with threads pinned (~1.6x). Reading the
-quota and limiting the pool to it removes that penalty. This fires where the quota is visible
-in-container: ``docker --cpus``, Kubernetes / EKS CPU limits, EC2 with cgroup limits.
+Two things can be true at once: a cgroup CFS quota is visible inside the container, *and* the
+container still reports the host's full core count. When that happens, NumPy's BLAS sizes its
+thread pool to those cores and oversubscribes the quota. Under concurrent load — several workers
+each spawning that many threads against a fraction of a vCPU — the threads thrash. Measured under
+``docker --cpus=0.5`` on a 16-core host with 4 worker processes: per-call time was ~70 s, versus
+~42 s with threads pinned (~1.6x). Reading the quota and limiting the pool to it removes that
+penalty. This fires where the quota is visible in-container: ``docker --cpus``, Kubernetes / EKS
+CPU limits, EC2 with cgroup limits.
 
-It does NOT fire on AWS Fargate (GitLab #10): Fargate meters CPU outside the container's cgroup
-namespace (``cpu.cfs_quota_us`` is ``-1``, no ``cpu.max``), so the quota is invisible here — and
-the task runs in a micro-VM whose ``os.cpu_count()`` already reports the small task core count,
+It does NOT fire on AWS Fargate (GitLab #10). Fargate meters CPU outside the container's cgroup
+namespace (``cpu.cfs_quota_us`` is ``-1``, no ``cpu.max``), so the quota is invisible here. And
+the task runs in a micro-VM. Its ``os.cpu_count()`` already reports the small task core count,
 not a host's dozens, so BLAS does not oversubscribe there in the first place. Wherever no quota
 is visible (a notebook, a full server, Fargate) nothing is capped and BLAS is left alone.
 
-``threadpoolctl`` is imported lazily — only when a cap actually applies — so ``import fastumap``
+``threadpoolctl`` is imported lazily — only when a cap actually applies. So ``import fastumap``
 and uncapped runs never touch it.
 """
 
@@ -56,9 +57,9 @@ def _cgroup_cpu_quota() -> float | None:
 def blas_thread_limit() -> int | None:
     """BLAS thread count for a constrained CPU allotment, or None to leave BLAS alone.
 
-    Returns a cap only when the process is limited below the host core count — by a cgroup CFS
-    quota (Fargate/ECS/Lambda) or a cpuset affinity smaller than the host. A fractional quota
-    floors to one thread. On an unconstrained host it returns None.
+    Returns a cap only when the process is limited below the host core count. The limit can come
+    from a cgroup CFS quota (Fargate/ECS/Lambda) or a cpuset affinity smaller than the host. A
+    fractional quota floors to one thread. On an unconstrained host it returns None.
     """
     host = os.cpu_count() or 1
     limit = host

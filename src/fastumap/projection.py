@@ -29,9 +29,9 @@ def _default_epochs(n: int) -> int:
 
 
 def _validate(matrix: FloatArray, dimensions: int) -> FloatArray:
-    # Sparse input is out of scope (see README "Sparse input"): the blocked kNN relies on
+    # Sparse input is out of scope (see README "Sparse input"). The blocked kNN relies on
     # dense BLAS matmul, and the target workload is dense encoder/CLS embeddings. Detect a
-    # sparse matrix by its `toarray` method and fail with a clear pointer rather than the
+    # sparse matrix by its `toarray` method. Fail with a clear pointer, rather than the
     # cryptic error np.ascontiguousarray would raise on it.
     if hasattr(matrix, "toarray"):  # scipy.sparse matrices have it; numpy arrays do not
         raise TypeError(
@@ -51,8 +51,8 @@ def _validate(matrix: FloatArray, dimensions: int) -> FloatArray:
 def _pca_reduce(x: FloatArray, pca_dim: int) -> tuple[FloatArray, FloatArray, FloatArray]:
     """Reduce ``x`` to ``pca_dim`` principal components (deterministic, exact SVD).
 
-    The kNN cost is O(n^2 * d); at 1024-d that d dominates. Projecting onto the top
-    ~100 components first shrinks it ~10x with little quality loss, because encoder/CLS
+    The kNN cost is O(n^2 * d). At 1024-d that d dominates. Projecting onto the top ~100
+    components first shrinks it ~10x with little quality loss. This works because encoder/CLS
     embeddings live on a low-rank subspace. Returns ``(reduced, mean, components)`` so
     ``transform`` can project new points the same way.
     """
@@ -71,9 +71,10 @@ _MODEL_FORMAT = 1  # bump when the serialised fields change; from_npz checks it 
 class UMAPModel:
     """A fitted layout plus everything ``transform`` needs to place new points.
 
-    ``train`` is kept because placing a new point requires its nearest neighbours in the
-    training data (in the same space the fit used — the PCA-reduced space when ``pca_dim``
-    was set). ``embedding`` is the frozen training layout new points are positioned against.
+    ``train`` is kept because placing a new point needs its nearest neighbours in the
+    training data. Those neighbours must be found in the same space the fit used: the
+    PCA-reduced space when ``pca_dim`` was set. ``embedding`` is the frozen training layout
+    that new points are positioned against.
     """
 
     train: Float32Array
@@ -90,7 +91,7 @@ class UMAPModel:
     pca_components: FloatArray | None = None
 
     def to_npz(self, file: str | os.PathLike[str] | BinaryIO) -> None:
-        """Save to a versioned ``.npz`` — portable across releases, unlike ``pickle`` which
+        """Save to a versioned ``.npz``. Portable across releases, unlike ``pickle``, which
         welds the model to the exact dataclass layout. Load it back with :meth:`from_npz`."""
         np.savez(
             file,
@@ -172,15 +173,20 @@ def fit(
     """Fit a UMAP layout and return a :class:`UMAPModel` (use ``.embedding`` for the coords).
 
     Deterministic given ``random_state``. See :func:`umap_project` for the parameters.
+
     ``pca_dim`` (default ``None`` = off) pre-reduces the input to that many principal
-    components before the kNN, which speeds up high-dimensional inputs; ``transform``
-    projects new points through the same basis. ``init`` overrides the spectral start with a
-    given ``(n, dimensions)`` embedding — pass the previous view's coordinates so a refreshed
-    layout stays comparable instead of rotating or reflecting (a warm start: the SGD still
-    refines, so lower ``n_epochs`` for a lighter touch); place any new rows yourself.
-    ``y`` (categorical class labels, one per point, ``-1`` for unlabelled) turns on supervised
-    projection: same-label points attract, weighted by ``target_weight`` in ``[0, 1]`` (default
-    0.5; 1.0 severs every inter-class edge). Default ``y=None`` is unchanged unsupervised UMAP.
+    components before the kNN. This speeds up high-dimensional inputs. ``transform``
+    projects new points through the same basis.
+
+    ``init`` overrides the spectral start with a given ``(n, dimensions)`` embedding. Pass
+    the previous view's coordinates so a refreshed layout stays comparable, instead of
+    rotating or reflecting. This is a warm start: the SGD still refines, so lower
+    ``n_epochs`` for a lighter touch. Place any new rows yourself.
+
+    ``y`` (categorical class labels, one per point, ``-1`` for unlabelled) turns on
+    supervised projection: same-label points attract, weighted by ``target_weight`` in
+    ``[0, 1]`` (default 0.5; 1.0 severs every inter-class edge). Default ``y=None`` is
+    unchanged unsupervised UMAP.
     """
     x = _validate(matrix, dimensions)
     n, n_features = x.shape
@@ -217,9 +223,9 @@ def fit(
         chunk_count=chunk_count,
     )
     return UMAPModel(
-        # Store the training set (only used by transform's kNN) as float32 to halve the
-        # cached-model footprint on memory-constrained hosts (Lambda/ECS); transform upcasts
-        # to float64 for the distance compute so quality is unaffected.
+        # Store the training set (only used by transform's kNN) as float32. This halves the
+        # cached-model footprint on memory-constrained hosts (Lambda/ECS). transform upcasts
+        # to float64 for the distance compute, so quality is unaffected.
         train=np.ascontiguousarray(work, dtype=np.float32),
         embedding=embedding,
         a=a,
@@ -257,6 +263,7 @@ def umap_project(
 
     Deterministic given ``random_state``: the spectral start vector is pinned and the
     negative sampler is seeded, so the same input and seed give bit-identical output.
+
     ``metric`` is ``"euclidean"`` or ``"cosine"``. ``chunk_count > 1`` enables partial
     in-epoch feedback (higher local overlap, slower). ``pca_dim`` pre-reduces the input to
     that many principal components before the kNN, to speed up high-dimensional inputs.
@@ -308,13 +315,13 @@ def transform(
     """Place new points into ``model``'s existing layout without refitting it.
 
     New points are attracted to their nearest neighbours in the training set and repelled
-    from random training points; the training layout stays fixed, so the picture is stable
+    from random training points. The training layout stays fixed, so the picture is stable
     across calls. Deterministic given the model and input. Returns ``(n_new, dimensions)``.
 
-    With ``return_distances=True`` also returns, per new point, the distance to its nearest
-    training neighbour — a per-point measure of fit. Watch it against the training set's own
-    mean nearest-neighbour distance: points landing 2-3x further out are extrapolations, and a
-    rising batch mean is the signal to refit (see the README).
+    With ``return_distances=True`` it also returns, per new point, the distance to its
+    nearest training neighbour. This is a per-point measure of fit. Watch it against the
+    training set's own mean nearest-neighbour distance. Points landing 2-3x further out are
+    extrapolations. A rising batch mean is the signal to refit (see the README).
     """
     new_x = _validate(matrix, model.dimensions)
     if new_x.shape[1] != model.n_features:
