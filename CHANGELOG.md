@@ -5,6 +5,15 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-08-25
+
+### Added
+- `choose_k(embeddings, *, k_min=2, k_max=10, ...)` — pick `n_clusters` automatically by the
+  inertia elbow (kneedle knee of the inertia-vs-k curve). Runs k-means across the range and
+  returns the sharpest bend; on more than `max_samples` rows it searches a deterministic
+  subsample to bound cost. A heuristic — recovers the true k give or take one on clear cluster
+  structure (verified on separated blobs at k=3/5/7). Exported at the top level.
+
 ## [0.2.4] - 2026-08-25
 
 ### Changed

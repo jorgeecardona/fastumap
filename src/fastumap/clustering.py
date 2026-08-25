@@ -164,6 +164,63 @@ def assign_clusters(
     return _assign(work, c)
 
 
+def choose_k(
+    embeddings: FloatArray,
+    *,
+    k_min: int = 2,
+    k_max: int = 10,
+    metric: str = "euclidean",
+    n_iter: int = 50,
+    random_state: int = 42,
+    max_samples: int = 20_000,
+) -> int:
+    """Pick ``n_clusters`` automatically by the inertia elbow — the "kneedle" knee of the
+    inertia-vs-k curve, i.e. the k past which adding clusters stops buying much tightness.
+
+    Runs k-means for each ``k`` in ``[k_min, k_max]`` and returns the elbow. On more than
+    ``max_samples`` rows it searches on a deterministic random subsample to bound the cost (the
+    returned k still applies to the full data). It is a heuristic: for a clear cluster structure it
+    lands on the true k give or take one; for gradual structure treat it as a starting point.
+    """
+    x = np.ascontiguousarray(embeddings, dtype=np.float64)
+    if x.ndim != 2:
+        raise ValueError("embeddings must be 2-D (n, d)")
+    n = x.shape[0]
+    hi = min(k_max, n - 1)
+    if k_min < 2 or hi < k_min:
+        raise ValueError(f"need 2 <= k_min <= k_max < n; got k_min={k_min}, k_max={k_max}, n={n}")
+    if n > max_samples:
+        rng = np.random.default_rng(random_state)
+        x = x[rng.choice(n, max_samples, replace=False)]
+    ks = list(range(k_min, hi + 1))
+    if len(ks) == 1:
+        return ks[0]
+    inertias = [
+        cluster(
+            x,
+            method="kmeans",
+            n_clusters=k,
+            metric=metric,
+            n_iter=n_iter,
+            random_state=random_state,
+            return_centroids=True,
+        ).inertia
+        for k in ks
+    ]
+    return _elbow(ks, inertias)
+
+
+def _elbow(ks: list[int], inertias: list[float]) -> int:
+    """Kneedle: normalise the (k, inertia) curve to the unit square and return the k whose point
+    sits farthest above the straight chord from first to last — the sharpest bend."""
+    xs = np.asarray(ks, dtype=np.float64)
+    ys = np.asarray(inertias, dtype=np.float64)
+    xs = (xs - xs[0]) / (xs[-1] - xs[0])
+    span = float(ys[0] - ys[-1])
+    ys = (ys[0] - ys) / (span if span > 0.0 else 1.0)  # decreasing inertia -> increasing 0..1
+    return ks[int(np.argmax(ys - xs))]  # farthest above the y=x chord
+
+
 def _assign(x: FloatArray, centroids: FloatArray) -> IntArray:
     """Nearest-centroid label per row, computed one block at a time (bounded memory)."""
     n = x.shape[0]

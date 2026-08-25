@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from fastumap import cluster
-from fastumap.clustering import ClusterResult, assign_clusters, kmeans
+from fastumap.clustering import ClusterResult, assign_clusters, choose_k, kmeans
 
 
 def _blobs(n: int = 1500, d: int = 20, k: int = 5, spread: float = 6.0, seed: int = 0):
@@ -138,3 +138,28 @@ def test_assign_clusters_honours_cosine_metric() -> None:
 def test_assign_clusters_rejects_mismatched_dims() -> None:
     with pytest.raises(ValueError, match="dim"):
         assign_clusters(np.zeros((10, 4)), np.zeros((3, 5)))
+
+
+@pytest.mark.parametrize("true_k", [3, 5, 7])
+def test_choose_k_recovers_true_k_on_separated_blobs(true_k: int) -> None:
+    x, _ = _blobs(n=1500, d=16, k=true_k, spread=8.0)
+    k = choose_k(x, k_min=2, k_max=10, random_state=0)
+    assert abs(k - true_k) <= 1  # the elbow lands on the true k give or take one
+
+
+def test_choose_k_subsamples_large_n_and_stays_valid() -> None:
+    # above max_samples the search runs on a subsample; the returned k must still be in range.
+    x, _ = _blobs(n=25_000, d=8, k=4, spread=8.0)
+    k = choose_k(x, k_min=2, k_max=8, max_samples=5_000, random_state=0)
+    assert 2 <= k <= 8
+
+
+def test_choose_k_is_deterministic() -> None:
+    x, _ = _blobs(n=1200, d=12, k=5)
+    assert choose_k(x, random_state=0) == choose_k(x, random_state=0)
+
+
+def test_choose_k_rejects_bad_range() -> None:
+    x, _ = _blobs(n=100)
+    with pytest.raises(ValueError, match="k_min"):
+        choose_k(x, k_min=1, k_max=5)
