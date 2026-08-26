@@ -50,3 +50,36 @@ it against a kernel-enabled probe compares two different implementations. Needs 
 Also measured for the first time: clustering under a cap. At 0.5 vCPU, n=5000x1024, `cluster`
 takes 20.7 s against `fit`'s 33.2 s — about two-thirds the cost of a full projection, not the
 rounding error it is usually assumed to be.
+
+## Update 2026-08-26 (2) — the open question is ANSWERED, and it was not the code path
+
+The previous update guessed the gap might be a different code path: if the Fargate run predated
+0.2.1 it used the pure-numpy SGD, not the Rust kernel. TESTED directly with a new
+`bench/constrained.py --numpy-path` flag, which clears `layout._accel_optimize` so the SGD runs
+through numpy — same data, same seed, same container. `accelerator_active` printed False,
+confirming the fallback really ran.
+
+MEASURED, all at `docker --cpus=0.5`, 1024 dims:
+
+| n | Fargate (observed) | probe, Rust kernel | probe, numpy path |
+|---|---:|---:|---:|
+| 250 | 7.6 s | 3.5 s | 4.5 s |
+| 500 | 28 s | 2.8 s | 4.7 s |
+| 1000 | 83 s | 5.6 s | 8.7 s |
+| 5000 | 270 s | 33.2 s | 47.4 s |
+
+DISPROVEN. The numpy path costs about 1.4x the kernel, not the 5-10x the gap needs, and the shape
+is unchanged: 250->500 is still flat (4.5 -> 4.7 s) where production's is 3.7x. So Jorge no longer
+needs to dig up which version produced those numbers — the answer does not change the conclusion.
+
+What is left is the environment, hypotheses 1 and 2 from the previous update: half a core of an
+i9-9880H is far more compute than half a shared Fargate vCPU, and the container still reports all
+16 host cores so BLAS and rayon spread the quota across threads a Fargate micro-VM does not have.
+
+CONSEQUENCE for this issue's done-condition. "A table whose shape matches Jorge's observed Fargate
+curve" is not reachable from this host by any code change — matching Fargate's absolute numbers
+needs Fargate. The probe that exists is reproducible (two runs within ~10% at every point) and
+self-checking (it prints its own numbers beside production's on every run), which makes it a good
+DRIFT detector on a fixed host. Whether that is enough to call this done, or whether it should be
+re-scoped to "run the probe ON Fargate and compare", is Jorge's call — so it stays open rather than
+being closed against a bar it does not clear.

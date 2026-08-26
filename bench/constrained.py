@@ -43,6 +43,13 @@ def main() -> None:
     parser.add_argument("--sizes", default="250,500,1000,5000")
     parser.add_argument("--dim", type=int, default=1024)
     parser.add_argument("--clusters", type=int, default=8, help="k for the clustering half")
+    parser.add_argument(
+        "--numpy-path",
+        action="store_true",
+        help="force the pure-numpy SGD by disabling the native kernel, to measure what a "
+        "pre-0.2.1 install (no compiled _accel) would have cost on the same container",
+    )
+    parser.add_argument("--skip-cluster", action="store_true", help="time the fit only")
     args = parser.parse_args()
 
     ms = import_cost_ms()
@@ -52,6 +59,13 @@ def main() -> None:
 
     from fastumap import accelerator_active, cluster, umap_project
 
+    if args.numpy_path:
+        # layout._accel_optimize is read at call time, so clearing it routes the SGD through the
+        # pure-numpy path — the same code a pre-0.2.1 install (before the kernel was merged in)
+        # would have run. Nothing else changes: same data, same seed, same container.
+        from fastumap import layout
+
+        layout._accel_optimize = None  # pyright: ignore[reportPrivateUsage]
     _stderr(f"native kernel active: {accelerator_active()}  cpu_count={os.cpu_count()}")
     print(f"| {args.cap} | import | | {ms:.0f} ms | |")
 
@@ -64,6 +78,10 @@ def main() -> None:
         umap_project(x, 2, random_state=0)
         fit_s = time.perf_counter() - start
         _stderr(f"  fit     n={n:<6} {fit_s:8.1f} s")
+
+        if args.skip_cluster:
+            print(f"| {args.cap} | {n} | {args.dim} | {fit_s:.1f} s | (skipped) |")
+            continue
 
         # k-means on the same input, so the two halves are comparable at each n. Clustering does
         # not need a layout first, which is exactly why it is worth timing separately.
