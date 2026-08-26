@@ -55,3 +55,34 @@ published. INSPECTED on the PyPI files list for 0.2.17:
 
 So `pip install fastumap` on Windows x86_64 no longer needs a compiler. Only the macOS half is
 left, and it is an account-plan decision, not code.
+
+## Update 2026-08-26 (2) — the macOS workflow is written and waiting on two human steps
+
+Jorge asked for the macOS half "if possible". It is not possible to finish from here: it needs a
+GitHub account and a PyPI settings change, and neither `gh` nor a macOS host exists in this
+environment. What IS done is everything up to those two steps.
+
+ADDED: `.github/workflows/macos-wheels.yml`. Inert on GitLab; it activates the moment the repo is
+mirrored to GitHub. Structure adapted from `maturin generate-ci github --platform macos`, with two
+deliberate changes: no free-threaded (3.14t) build, because fastumap ships cp311-abi3 and one wheel
+per arch already covers 3.11+; and no sdist job, because GitLab publishes the sdist and two sources
+uploading the same filename would collide. It builds x86_64 (`macos-15-intel`) and aarch64
+(`macos-latest`) and publishes ONLY those two wheels, via OIDC trusted publishing with
+`skip-existing: true`, so it composes with the GitLab publish instead of fighting it. Triggers are
+`workflow_dispatch` and `v*` tags — never on every push.
+
+REMAINING, both one-time and both human:
+  1. Mirror the repo to GitHub. A push mirror from GitLab
+     (Settings > Repository > Mirroring repositories) keeps it in sync with no ongoing work.
+  2. Add a SECOND PyPI trusted publisher, alongside the GitLab one:
+     pypi.org > fastumap > Manage > Publishing > Add a new publisher > GitHub, with
+     owner=<github username>, repository=fastumap, workflow=macos-wheels.yml, environment=pypi.
+     A project may have several trusted publishers; this does not disturb the GitLab publish.
+
+The alternative path stays open and is strictly less work if it is granted: the GitLab for Open
+Source program gives Ultimate, which includes the hosted macOS runners, and then the macOS build
+could move into .gitlab-ci.yml beside the others and this workflow could be deleted. fastumap is
+MIT and public, so it looks eligible. Cost note if that lands: macOS bills at cost factor 6, so it
+belongs on a tag-only trigger, not on every push.
+
+Still OPEN until PyPI shows a `macosx_*` wheel. The Windows half is done and verified.

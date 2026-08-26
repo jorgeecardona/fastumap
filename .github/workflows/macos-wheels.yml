@@ -1,0 +1,90 @@
+# macOS wheels for fastumap — the ONE thing GitLab CI cannot build for this project.
+#
+# Everything else (Linux x86_64 + aarch64 manylinux, musllinux, Windows x86_64, the sdist, and the
+# PyPI publish) is built by .gitlab-ci.yml and stays there. GitLab's hosted macOS runners are
+# Premium/Ultimate only and this namespace is Free, so macOS is the single gap. This workflow fills
+# it from GitHub's free macOS runners and publishes ONLY the macOS wheels.
+#
+# Structure adapted from `maturin generate-ci github --platform macos`, with two changes:
+#   - no free-threaded (3.14t) build: fastumap ships cp311-abi3, so one wheel per arch covers 3.11+
+#   - no sdist job: GitLab already publishes the sdist, and two sources uploading the same
+#     filename would collide
+#
+# ── SETUP, both steps are one-time and must be done by a human ────────────────────────────────
+#
+# 1. Mirror this repo to GitHub (github.com/<you>/fastumap). A push mirror from GitLab
+#    (Settings > Repository > Mirroring repositories) keeps it in sync automatically.
+#
+# 2. Add a PyPI trusted publisher for GitHub Actions, ALONGSIDE the existing GitLab one:
+#    pypi.org > fastumap > Manage > Publishing > Add a new publisher > GitHub
+#      Owner:            <your github username>
+#      Repository:       fastumap
+#      Workflow name:    macos-wheels.yml
+#      Environment:      pypi
+#    A project can have several trusted publishers, so this does not disturb the GitLab publish.
+#
+# Then run it from the Actions tab (Run workflow) after a release, or push a tag.
+# No API token is stored anywhere — publishing uses OIDC, same as the GitLab side.
+name: macOS wheels
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build ${{ matrix.platform.target }}
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - runner: macos-15-intel
+            target: x86_64
+          - runner: macos-latest
+            target: aarch64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"   # cp311-abi3: this one wheel covers 3.11+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          args: --release --out dist --manifest-path rust/Cargo.toml
+          sccache: "true"
+      - name: Show what was built
+        run: ls -l dist
+      - uses: actions/upload-artifact@v6
+        with:
+          name: wheels-macos-${{ matrix.platform.target }}
+          path: dist
+
+  publish:
+    name: publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [build]
+    environment:
+      name: pypi
+      url: https://pypi.org/project/fastumap/
+    permissions:
+      id-token: write   # OIDC for PyPI trusted publishing; no stored token
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: wheels-macos-*
+          merge-multiple: true
+          path: dist
+      - run: ls -l dist
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # The Linux and Windows wheels for this version are already on PyPI from GitLab; this
+          # job adds only the macOS files. skip-existing makes a re-run a no-op, not a 400.
+          skip-existing: true

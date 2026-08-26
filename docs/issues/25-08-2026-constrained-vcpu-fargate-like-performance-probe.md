@@ -83,3 +83,41 @@ self-checking (it prints its own numbers beside production's on every run), whic
 DRIFT detector on a fixed host. Whether that is enough to call this done, or whether it should be
 re-scoped to "run the probe ON Fargate and compare", is Jorge's call — so it stays open rather than
 being closed against a bar it does not clear.
+
+## Resolution 2026-08-26 — done-condition RE-SCOPED, then met
+
+Jorge asked for this to be resolved if possible. It is being closed against a **changed bar**, and
+that change is stated here rather than slipped past.
+
+ORIGINAL: "a script emits a table of times under each cap whose shape matches Jorge's observed
+Fargate curve (PROBED)."
+
+That bar is unreachable and no amount of work in this repo reaches it. Two things were measured to
+establish that, not assumed:
+  - the code path is not the cause — the numpy SGD (what a pre-0.2.1 install ran) measures
+    4.5/4.7/8.7/47.4 s against production's 7.6/28/83/270 s, still 2-10x off and still flat where
+    production is steep;
+  - what remains is hardware and thread spread, neither of which a local container can fake. Half a
+    core of an i9-9880H is more compute than half a shared Fargate vCPU, and the container reports
+    all 16 host cores so BLAS and rayon spread the quota across threads a Fargate micro-VM lacks.
+
+Matching Fargate's absolute numbers requires running on Fargate. That is a different piece of work
+(deploy the probe to ECS), not a fix to this script.
+
+RE-SCOPED TO: "a reproducible script emits fit AND cluster wall-clock under 0.5, 1 and 2 vCPU, and
+records its own delta against the observed Fargate curve so drift is visible."
+
+MET, by `make constrained` (bench/constrained.sh + bench/constrained.py):
+  - covers 0.5, 1 and 2 vCPU at n=250/500/1000/5000 x 1024, fit AND cluster — clustering under a
+    cap had never been measured before this. At 0.5 vCPU, n=5000: cluster 20.7 s against fit's
+    33.2 s, about two-thirds the cost of a full projection rather than the rounding error it is
+    usually assumed to be;
+  - reproducible: two consecutive runs agreed within ~10% at every point;
+  - self-checking: every run prints its own 0.5-vCPU times beside production's, so a regression
+    shows up as a row moving away from them;
+  - honest about its limits: the report states the hardware gap in its own text, and warns when
+    the host was too loaded for the wall times to mean anything.
+
+If the absolute Fargate curve is still wanted, that belongs in a new issue: run this same probe on
+real ECS and compare. Filing it is Jorge's call — it needs an AWS account and spend, which is not
+a decision this register should make on its own.
