@@ -1,8 +1,8 @@
 ---
 title: Nightly full suite across all three Python versions
-status: open
+status: in-progress
 area: harness
-owner: null
+owner: bronze-sentinel-79061
 filed: 2026-08-25
 scope: S
 verify: test

@@ -28,6 +28,12 @@ workflow:
     - if: $CI_COMMIT_BRANCH
 
 ci:
+  # Scheduled pipelines run the `nightly` job only — re-running the gate and the publish every
+  # night buys nothing (scripts/release is a no-op once the version is on PyPI).
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - when: on_success
   # OIDC Trusted Publishing: GitLab mints a short-lived id_token; scripts/pypi-publish exchanges
   # it for a one-shot PyPI token. The `pypi` environment matches the PyPI publisher config.
   id_tokens:
@@ -103,6 +109,10 @@ ci:
 test-matrix:
   image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
   needs: []
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"   # `nightly` covers all three versions in full
+      when: never
+    - when: on_success
   variables:
     UV_LINK_MODE: copy
   before_script:
@@ -114,3 +124,26 @@ test-matrix:
   script:
     - . "$HOME/.cargo/env"
     - uv run tox -- tests/test_projection.py tests/test_find_ab_params.py tests/test_no_heavy_deps.py tests/test_version.py tests/test_import_cost.py
+
+# The FULL tox matrix (every test x 3.11/3.12/3.13), on a schedule instead of on every push.
+# test-matrix above is deliberately a subset: the full suite three times is too slow and too
+# memory-hungry for the shared runner to carry on each commit. A nightly can afford it, so
+# version-specific breakage outside that subset is caught the next day instead of at a release.
+# Runs ONLY on a schedule (Settings > CI/CD > Pipeline schedules, or `glab schedule list`).
+nightly:
+  image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+  needs: []
+  timeout: 2h
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  variables:
+    UV_LINK_MODE: copy
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends git libatomic1 build-essential curl ca-certificates
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+    - . "$HOME/.cargo/env"
+    - uv python install 3.11 3.12 3.13
+    - uv sync --frozen
+  script:
+    - . "$HOME/.cargo/env"
+    - uv run tox        # no posargs: the whole suite, on all three interpreters
