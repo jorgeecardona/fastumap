@@ -1,9 +1,10 @@
 ---
 title: Broaden the x86_64 wheel glibc floor (manylinux2014)
-status: in-progress
+status: done
 area: production
 owner: bronze-sentinel-79061
 filed: 2026-08-25
+fixed_in: 384b377abb76
 scope: S
 verify: inspect
 ---
