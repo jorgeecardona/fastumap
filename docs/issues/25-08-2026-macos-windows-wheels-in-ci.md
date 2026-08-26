@@ -41,5 +41,17 @@ Cost note if option 1 lands: macOS runners bill at **cost factor 6** (`saas-maco
 (`saas-macos-large-m2pro`), against Windows' 1. A 10-minute macOS build spends 60 compute minutes,
 so it belongs on a manual or tag-only trigger, not on every push to main.
 
-This issue stays OPEN until PyPI shows a `macosx_*` wheel. The `win_amd64` half can be inspected on
-the PyPI files list once the next release runs.
+This issue stays OPEN until PyPI shows a `macosx_*` wheel.
+
+VERIFIED 2026-08-26, pipeline #92 (sha 870d71c): `wheels-windows` went green on its first run and
+published. INSPECTED on the PyPI files list for 0.2.17:
+
+    fastumap-0.2.17-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+    fastumap-0.2.17-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+    fastumap-0.2.17-cp311-abi3-musllinux_1_2_aarch64.whl
+    fastumap-0.2.17-cp311-abi3-musllinux_1_2_x86_64.whl
+    fastumap-0.2.17-cp311-abi3-win_amd64.whl      <- new
+    fastumap-0.2.17.tar.gz
+
+So `pip install fastumap` on Windows x86_64 no longer needs a compiler. Only the macOS half is
+left, and it is an account-plan decision, not code.

@@ -230,7 +230,8 @@ windows and sparse input — densify sparse input first, and refit when the wind
 
 fastumap ships a compiled Rust extension (`fastumap._accel`) **inside the wheel** — a
 reimplementation of the SGD layout kernel and the k-means kernel. The prebuilt wheels (abi3,
-Python 3.11+; Linux x86_64 and aarch64/Graviton) carry it, so it is used automatically. On a
+Python 3.11+; Linux x86_64 and aarch64/Graviton, musl for Alpine, and Windows x86_64) carry it,
+so it is used automatically. macOS has no prebuilt wheel yet and builds from the sdist. On a
 platform without a prebuilt wheel, pip builds from the sdist, which needs a Rust toolchain. The
 NumPy path remains as a runtime fallback — if the extension is ever not present (for instance an
 unbuilt source checkout), fastumap still works, just slower. The SGD kernel is roughly 1.7–1.9×

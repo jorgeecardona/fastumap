@@ -5,6 +5,26 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.18] - 2026-08-26
+
+### Added
+- **Windows x86_64 wheel.** `pip install fastumap` on Windows no longer needs a Rust toolchain —
+  it gets a prebuilt `cp311-abi3-win_amd64` wheel like every other supported platform. Built by a
+  new `wheels-windows` CI job on GitLab's hosted Windows runner, which is available on the Free
+  plan at cost factor 1; no GitHub Actions mirror was needed. VERIFIED on the PyPI files list for
+  0.2.17: `fastumap-0.2.17-cp311-abi3-win_amd64.whl`.
+
+### Changed
+- The README's accelerator section listed only Linux x86_64 and aarch64 as prebuilt. It now names
+  every platform that actually ships a wheel (Linux x86_64/aarch64, musllinux, Windows x86_64) and
+  says plainly that macOS still builds from the sdist.
+
+### Known gaps
+- Still no macOS wheel. GitLab's hosted macOS runners are Premium/Ultimate only and this namespace
+  is Free, so it is an account-plan decision rather than a CI problem. The two paths — the GitLab
+  for Open Source program, or a GitHub Actions mirror for that one wheel — are written up in
+  `docs/issues/25-08-2026-macos-windows-wheels-in-ci.md`.
+
 ## [0.2.17] - 2026-08-26
 
 ### Added
