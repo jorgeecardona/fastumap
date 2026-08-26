@@ -1,0 +1,90 @@
+# Docs site for fastumap, published to GitLab Pages by the `pages` job in .gitlab-ci.yml.
+#
+#   uv sync --extra docs && uv run mkdocs serve     # local preview
+#   uv run mkdocs build --strict                    # what CI runs
+#
+# Every prose page pulls its text out of README.md with pymdownx snippets
+# (`--8<-- "README.md:section"`), so the README stays the single source of truth and the site can
+# never drift from it. The pages add navigation, framing and cross-links, not duplicated prose.
+site_name: fastumap
+site_description: UMAP and clustering that import in milliseconds — no numba, no JIT at import.
+site_url: https://jorgeecardona.gitlab.io/fastumap/
+repo_url: https://gitlab.com/jorgeecardona/fastumap
+repo_name: jorgeecardona/fastumap
+copyright: MIT licensed. An independent reimplementation of UMAP, not affiliated with its authors.
+
+docs_dir: docs/site
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Using it:
+      - Projection: projection.md
+      - Clustering: clustering.md
+      - In a server: server.md
+  - Performance:
+      - Speed and quality: performance.md
+      - Large inputs: large-inputs.md
+      - The native accelerator: accelerator.md
+      - Benchmark reports: benchmarks.md
+  - Reference:
+      - Guarantees and reproducibility: guarantees.md
+      - API: api.md
+      - Contributing: contributing.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: true
+            heading_level: 3
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.snippets:
+      base_path: [.]
+      check_paths: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/gitlab
+      link: https://gitlab.com/jorgeecardona/fastumap
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/fastumap/

@@ -47,3 +47,4 @@ src/fastumap/*.so
 # docs/issues/ IS tracked — the register is plain markdown.
 .mcp.json
 .claude/
+site/          # mkdocs build output

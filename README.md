@@ -1,5 +1,6 @@
 # fastumap
 
+<!-- --8<-- [start:pitch] -->
 A UMAP and clustering library built for one thing: **importing it costs milliseconds, not
 seconds** — nothing compiles when you import it. Mostly NumPy and SciPy, with precompiled native
 kernels (Rust, built into the wheel) for speed at scale.
@@ -15,14 +16,18 @@ compiled, but they ship their machine code precompiled in the wheel, so they loa
 fastumap reimplements the UMAP algorithm on top of them: the same mathematics, with nothing
 left to compile at import time.
 
+<!-- --8<-- [end:pitch] -->
 ## Installation
+<!-- --8<-- [start:install] -->
 
 ```bash
 pip install fastumap                 # one wheel — native kernels included
 pip install fastumap[ann]            # adds an approximate kNN backend for large inputs (see below)
 ```
 
+<!-- --8<-- [end:install] -->
 ## Usage
+<!-- --8<-- [start:usage] -->
 
 ```python
 from fastumap import umap_project, spectral_project
@@ -42,7 +47,9 @@ dm  = umap_project(x, 2, densmap=True)       # densMAP: keep dense/sparse region
 `umap_project` also accepts `n_neighbors`, `min_dist`, `spread`, `n_epochs`,
 `negative_sample_rate`, `random_state`, and `chunk_count`.
 
+<!-- --8<-- [end:usage] -->
 ## Supervised projection
+<!-- --8<-- [start:supervised] -->
 
 Pass categorical labels as `y` to let the classes inform the layout — same-label points attract,
 so structure that is separable in the input space stays separable in 2-D instead of interleaving:
@@ -60,7 +67,9 @@ This ports umap-learn's categorical intersection. The UMAP paper only sketches t
 (arXiv:1802.03426, §7 Future Work), so umap-learn is the reference — see its
 [supervised docs](https://umap-learn.readthedocs.io/en/latest/supervised.html).
 
+<!-- --8<-- [end:supervised] -->
 ## Clustering
+<!-- --8<-- [start:clustering] -->
 
 `cluster` groups points directly — implemented ourselves (numpy and scipy plus the native k-means
 kernel), with no external clustering library. It does **not** compute a 2-D layout first: that
@@ -101,11 +110,14 @@ and engages automatically above 50k points. That is a **multi-core batch**
 figure — on a throttled container (0.5–2 vCPU) the same job is CPU-bound and takes far longer, so
 run clustering on a real machine, not a fractional-vCPU serving box.
 
+<!-- --8<-- [end:clustering] -->
 ## Quality relative to umap-learn
+<!-- --8<-- [start:quality] -->
 
 fastumap stays within 0.01 neighbour overlap of umap-learn. Measured on MNIST (784-dimensional,
 seed 42). **These numbers are generated, not pasted**: run `make bench-report` to regenerate them
-into a dated report under [docs/bench/](docs/bench/), which records the machine, the load average
+into a dated report under [docs/bench/](https://gitlab.com/jorgeecardona/fastumap/-/tree/main/docs/bench),
+which records the machine, the load average
 and every package version they were measured on.
 
 | n | method | wall time | overlap@15 | global corr |
@@ -135,7 +147,9 @@ proportional cost and stays deterministic.
 > projection (read against a random baseline). global corr is the Spearman correlation of all
 > pairwise distances, before versus after.
 
+<!-- --8<-- [end:quality] -->
 ## Speed per call
+<!-- --8<-- [start:speed] -->
 
 Cold start is fastumap's win. Per-call latency is the trade-off.
 
@@ -159,7 +173,9 @@ quota is visible, nothing is capped.
 **AWS Fargate is a no-op here**: it meters CPU outside the cgroup, so the quota is invisible. But
 Fargate also reports a low core count, so BLAS doesn't oversubscribe there anyway.
 
+<!-- --8<-- [end:speed] -->
 ## Server usage
+<!-- --8<-- [start:server] -->
 
 `umap_project` is thread-safe — it holds no module-level mutable state and seeds a fresh RNG
 per call — so it may be called from a worker thread (`await asyncio.to_thread(umap_project,
@@ -192,7 +208,9 @@ model = UMAPModel.from_npz("layout.npz")
 A cached 5000×1024 model is about 20 MB (training data stored as float32). Not supported: rolling
 windows and sparse input — densify sparse input first, and refit when the window slides.
 
+<!-- --8<-- [end:server] -->
 ## The native accelerator
+<!-- --8<-- [start:accelerator] -->
 
 fastumap ships a compiled Rust extension (`fastumap._accel`) **inside the wheel** — a
 reimplementation of the SGD layout kernel and the k-means kernel. The prebuilt wheels (abi3,
@@ -215,7 +233,9 @@ fastumap.accelerator_active()   # True if the native kernel is present (the norm
 built into `fastumap` itself (0.2.1+). Just `pip install -U fastumap` and drop any
 `fastumap-accel` dependency; nothing else changes.
 
+<!-- --8<-- [end:accelerator] -->
 ## Large inputs (approximate kNN)
+<!-- --8<-- [start:ann] -->
 
 The exact neighbour search is O(n²) and dominates runtime above ~20k points. `pip install
 fastumap[ann]` adds an approximate backend — [faiss](https://faiss.ai) HNSW, which ships
@@ -238,6 +258,7 @@ against exact. Measured on the neighbour search alone (256-dim):
 
 `fastumap.ann_available()` reports whether the backend is installed.
 
+<!-- --8<-- [start:reproducibility] -->
 For a given input and seed, output is bit-identical across processes and machines in the same
 environment. Two things change it across *different* environments:
 
@@ -247,8 +268,11 @@ environment. Two things change it across *different* environments:
 
 Treat both as part of the environment. `accelerator_active()` and `ann_available()` report which
 paths a run used, so a stored projection can record how it was made.
+<!-- --8<-- [end:reproducibility] -->
 
+<!-- --8<-- [end:ann] -->
 ## Guarantees
+<!-- --8<-- [start:guarantees] -->
 
 Each is enforced by a test:
 
@@ -261,7 +285,9 @@ Each is enforced by a test:
 - **Any output dimension** — 2-D/3-D for pictures, ~10-D for clustering; fully type-checked under
   pyright strict.
 
+<!-- --8<-- [end:guarantees] -->
 ## Development
+<!-- --8<-- [start:development] -->
 
 ```bash
 make check     # lint, type-check, and tests
@@ -269,9 +295,13 @@ make tox       # the suite across Python 3.11, 3.12, and 3.13
 make fargate   # import and fit timing under a constrained CPU cap (docker --cpus=0.5 --memory=2g)
 ```
 
+<!-- --8<-- [end:development] -->
 ## License and attribution
+<!-- --8<-- [start:license] -->
 
 fastumap is an independent reimplementation of the UMAP algorithm
 ([McInnes, Healy & Melville, arXiv:1802.03426](https://arxiv.org/abs/1802.03426)). It is not
 affiliated with or endorsed by the UMAP authors and is not a drop-in replacement; the public
 API is intentionally small. MIT licensed.
+
+<!-- --8<-- [end:license] -->

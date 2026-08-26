@@ -147,3 +147,24 @@ nightly:
   script:
     - . "$HOME/.cargo/env"
     - uv run tox        # no posargs: the whole suite, on all three interpreters
+
+
+# Docs site -> GitLab Pages, main only. mkdocstrings reads src/fastumap statically (griffe), so
+# this job never installs fastumap and never needs a Rust toolchain: --no-install-project keeps
+# the sync to the docs extra alone, --no-sync stops `uv run` putting the project back. Builds in
+# seconds. `--strict` fails the job on a broken cross-link rather than publishing one.
+pages:
+  image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+  needs: []
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  variables:
+    UV_LINK_MODE: copy
+  script:
+    - uv sync --frozen --extra docs --no-install-project
+    - uv run --no-sync mkdocs build --strict --site-dir public
+  artifacts:
+    paths:
+      - public

@@ -37,6 +37,7 @@ unloaded host shows a wider margin. The distribution is a single **abi3** wheel 
 compatible with Python 3.11 and later — one build, no per-version rebuild.
 
 ## Building
+<!-- --8<-- [start:building] -->
 
 Run from the repository root — maturin reads the root `pyproject.toml` (its `[tool.maturin]`
 points `manifest-path` at this `rust/Cargo.toml`) and builds the whole `fastumap` wheel, Python
@@ -50,3 +51,4 @@ maturin sdist                      # source distribution
 ```
 
 MIT licensed, as fastumap.
+<!-- --8<-- [end:building] -->

@@ -5,6 +5,23 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.15] - 2026-08-26
+
+### Added
+- **Docs site** — a navigable MkDocs Material site published to GitLab Pages by a `pages` job on
+  `main`: Home, Projection, Clustering, In a server, Speed and quality, Large inputs, The native
+  accelerator, Benchmark reports, Guarantees and reproducibility, API, Contributing. The API page
+  is generated from the source by mkdocstrings. Every prose page pulls its text out of `README.md`
+  with pymdownx snippet sections, so the README stays the single source of truth and the site
+  cannot drift from it. The `pages` job installs only the `docs` extra (`--no-install-project`),
+  so it needs no Rust toolchain and builds in seconds; `--strict` fails it on a broken cross-link
+  rather than publishing one.
+- `bench/report.py` also writes `docs/bench/latest.md` beside the dated report, so the site's
+  benchmarks page always shows the newest run with no page edit.
+
+### Changed
+- The `docs` extra now includes `ruff`; mkdocstrings uses it to format generated signatures.
+
 ## [0.2.14] - 2026-08-26
 
 ### Added

@@ -316,8 +316,13 @@ def main() -> None:
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{args.dataset}-{date.today().isoformat()}.md"
-    path.write_text(render(args.dataset, sizes, proj, clust, cluster_source, command))
-    print(f"\nwrote {path.relative_to(_ROOT)}")
+    body = render(args.dataset, sizes, proj, clust, cluster_source, command)
+    path.write_text(body)
+    # A stable filename beside the dated one, so the docs site can always show the newest report
+    # without a page edit per run (docs/site/benchmarks.md pulls this in).
+    latest = out_dir / "latest.md"
+    latest.write_text(body)
+    print(f"\nwrote {path.relative_to(_ROOT)} and {latest.relative_to(_ROOT)}")
 
 
 if __name__ == "__main__":
