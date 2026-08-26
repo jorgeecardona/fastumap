@@ -1,9 +1,10 @@
 ---
 title: hdbscan() — hierarchical density clustering over the kNN graph
-status: in-progress
+status: done
 area: capability
 owner: bronze-sentinel-79061
 filed: 2026-08-26
+fixed_in: 49ff821cd554
 scope: L
 verify: test
 ---
