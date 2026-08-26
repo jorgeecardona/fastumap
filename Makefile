@@ -1,4 +1,4 @@
-.PHONY: sync lint format typecheck test check build grade bench tox fargate install-hooks
+.PHONY: sync lint format typecheck test check build grade bench bench-report tox fargate install-hooks
 
 sync:
 	uv sync
@@ -27,6 +27,12 @@ grade:
 
 bench:
 	uv run python bench/mnist.py
+
+# Regenerate every benchmark number the READMEs quote into a dated report under docs/bench/.
+# Slow on purpose (real MNIST fits + k-means); this is the one command that makes the README
+# figures reproducible instead of hand-pasted.
+bench-report:
+	uv run python bench/report.py
 
 # Run the suite across Python 3.11/3.12/3.13 (uv provisions each interpreter).
 tox:

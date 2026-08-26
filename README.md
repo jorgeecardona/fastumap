@@ -103,23 +103,33 @@ run clustering on a real machine, not a fractional-vCPU serving box.
 
 ## Quality relative to umap-learn
 
-fastumap stays within 0.01–0.02 neighbour overlap of umap-learn and is marginally ahead on
-global structure. Measured on MNIST (784-dimensional, single-threaded, `make bench`):
+fastumap stays within 0.01 neighbour overlap of umap-learn. Measured on MNIST (784-dimensional,
+seed 42). **These numbers are generated, not pasted**: run `make bench-report` to regenerate them
+into a dated report under [docs/bench/](docs/bench/), which records the machine, the load average
+and every package version they were measured on.
 
 | n | method | wall time | overlap@15 | global corr |
 |---|---|---:|---:|---:|
-| 5000 | fastumap | 26 s | 0.333 | 0.310 |
-| 5000 | umap-learn | 73 s | 0.344 | 0.329 |
-| 10000 | fastumap | 72 s | 0.267 | 0.279 |
-| 10000 | umap-learn | 83 s | 0.274 | 0.286 |
-| 20000 | fastumap | 110 s | 0.188 | 0.323 |
-| 20000 | umap-learn | 31 s | 0.205 | 0.316 |
+| 5000 | fastumap | 22 s | 0.341 | 0.320 |
+| 5000 | umap-learn | 79 s | 0.344 | 0.329 |
+| 5000 | pca | 87 s | 0.058 | 0.523 |
+| 10000 | fastumap | 46 s | 0.271 | 0.361 |
+| 10000 | umap-learn | 50 s | 0.268 | 0.387 |
+| 10000 | pca | 120 s | 0.038 | 0.487 |
+| 20000 | fastumap | 57 s | 0.207 | 0.358 |
+| 20000 | umap-learn | 69 s | 0.204 | 0.368 |
+| 20000 | pca | 237 s | 0.024 | 0.504 |
 
-fastumap is faster at 5k and 10k and slower at 20k, where its exact O(n²) neighbour search
-becomes the bottleneck (`pip install fastumap[ann]` addresses this — see below). umap-learn's times
-reuse the numba compilation from its first fit — a fresh process pays roughly 20 s of
-compilation on every invocation. Raising `chunk_count` (default 1) recovers most of the
-remaining local-overlap gap at proportional cost and stays deterministic.
+Read the quality columns, not the wall times: overlap@15 and global corr are deterministic, while
+the times above came from a loaded machine (see the report) and are inflated for every method.
+PCA is the control — it keeps global structure best and local structure worst, which is the
+trade-off UMAP exists to fix.
+
+umap-learn's times reuse the numba compilation from its first fit; a fresh process pays roughly
+20 s of compilation on every invocation, which fastumap never pays. Above ~50k points fastumap's
+exact O(n²) neighbour search becomes the bottleneck — `pip install fastumap[ann]` addresses that
+(see below). Raising `chunk_count` (default 1) recovers most of the remaining local-overlap gap at
+proportional cost and stays deterministic.
 
 > overlap@15 is the fraction of each point's 15 input-space neighbours retained after
 > projection (read against a random baseline). global corr is the Spearman correlation of all
