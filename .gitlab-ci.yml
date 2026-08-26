@@ -52,6 +52,7 @@ ci:
     - proto install                       # moon + uv, pinned in .prototools
     - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
     - . "$HOME/.cargo/env"
+    - rustup target add x86_64-unknown-linux-gnu    # explicit: the zig manylinux2014 build below
     - rustup target add aarch64-unknown-linux-gnu   # Graviton / ARM
     - rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl   # Alpine / musl libc
     - uv sync --frozen                    # builds fastumap (+ its _accel) via maturin, plus test deps
@@ -70,7 +71,12 @@ ci:
     # Without this the aarch64 cross-compile fails with "Failed to find zig".
     - export PATH="$CI_PROJECT_DIR/.venv/bin:$PATH"
     # Build the abi3 wheels + sdist with maturin (cp311-abi3 = one wheel per arch for Python 3.11+).
-    - .venv/bin/maturin build --release -m rust/Cargo.toml -o dist                     # x86_64
+    # x86_64 goes through zig like the aarch64 build below, so the wheel targets glibc 2.17
+    # (manylinux2014) instead of the builder image's own 2.36 (manylinux_2_34, which locked out
+    # Ubuntu 20.04, Amazon Linux 2 and older CentOS and sent them to the sdist + a Rust toolchain).
+    # Falls back to the native build, so a zig flake still ships an x86_64 wheel, just with the
+    # narrower glibc floor it had before.
+    - .venv/bin/maturin build --release --zig --target x86_64-unknown-linux-gnu --compatibility manylinux2014 -m rust/Cargo.toml -o dist || .venv/bin/maturin build --release -m rust/Cargo.toml -o dist
     # aarch64/Graviton via zig cross-compile. Best-effort: an ARM cross-compile flake must NOT
     # block the x86_64 + sdist publish below.
     - .venv/bin/maturin build --release --zig --target aarch64-unknown-linux-gnu -m rust/Cargo.toml -o dist || echo "aarch64 cross-compile failed; publishing x86_64 + sdist only"

@@ -5,6 +5,16 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.13] - 2026-08-26
+
+### Changed
+- The x86_64 manylinux wheel is now cross-built with zig against glibc 2.17, so it is tagged
+  `manylinux_2_17_x86_64.manylinux2014_x86_64` instead of the builder image's own
+  `manylinux_2_34` (MEASURED locally: `fastumap-0.2.12-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`).
+  Hosts with glibc < 2.34 — Ubuntu 20.04, Amazon Linux 2, older CentOS — get the wheel instead of
+  falling back to the sdist + a Rust toolchain. The native build stays as a fallback, so a zig
+  flake still ships an x86_64 wheel with the old, narrower floor. CI + packaging only.
+
 ## [0.2.12] - 2026-08-26
 
 ### Added
