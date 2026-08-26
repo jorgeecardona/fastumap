@@ -66,10 +66,11 @@ cabildo issues show <slug>
 <!-- BEGIN GENERATED INDEX — `cabildo issues reindex` -->
 | Issue | Area | Scope | Verify | Status | Waiting on |
 |---|---|---|---|---|---|
+| [Mini-batch k-means fails on well-separated clusters (4.8x worse inertia)](26-08-2026-mini-batch-k-means-fails-on-well-separated-clusters-4-8x-worse.md) | capability | M | test | open | — |
 | [Build and publish a docs site](25-08-2026-build-and-publish-a-docs-site.md) | harness | M | inspect | in-progress · @bronze-sentinel-79061 | — |
 | [Constrained-vCPU (Fargate-like) performance probe](25-08-2026-constrained-vcpu-fargate-like-performance-probe.md) | production | M | probe | open | — |
 | [macOS + Windows wheels in CI](25-08-2026-macos-windows-wheels-in-ci.md) | production | M | inspect | in-progress · @bronze-sentinel-79061 | — |
 | [Confirm the determinism guarantee on macOS in CI](25-08-2026-confirm-the-determinism-guarantee-on-macos-in-ci.md) | quality | S | test | open | macos-windows-wheels-in-ci |
 
-_4 open — 2 open, 2 in-progress; 37 done. Generated; edit the files, then `cabildo issues reindex`._
+_5 open — 3 open, 2 in-progress; 37 done. Generated; edit the files, then `cabildo issues reindex`._
 <!-- END GENERATED INDEX -->
