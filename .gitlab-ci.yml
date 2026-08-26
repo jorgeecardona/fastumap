@@ -149,6 +149,58 @@ nightly:
     - uv run tox        # no posargs: the whole suite, on all three interpreters
 
 
+# Windows x86_64 abi3 wheel, so `pip install fastumap` needs no Rust toolchain on Windows.
+#
+# GitLab's hosted Windows runners are available on the Free plan (cost factor 1, same rate as
+# Linux small), unlike the macOS ones which are Premium/Ultimate only — see the macOS+Windows
+# wheels issue in docs/issues for that half.
+#
+# Not a Docker executor: no `image:` key is allowed, and the shell is PowerShell. Python 3.13 is
+# preinstalled on the image; Rust is NOT, so rustup-init runs here.
+#
+# Best-effort like the aarch64 and musllinux cross-builds: a Windows flake must never block the
+# Linux publish, so `allow_failure: true`. It publishes its own wheel rather than handing an
+# artifact to `ci` — PyPI accepts extra files on an existing version, and `twine --skip-existing`
+# makes a re-run a no-op instead of a 400.
+wheels-windows:
+  tags:
+    - saas-windows-medium-amd64
+  needs: []
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  id_tokens:
+    PYPI_ID_TOKEN:
+      aud: pypi
+  environment:
+    name: pypi
+    url: https://pypi.org/project/fastumap/
+  script:
+    - $ErrorActionPreference = "Stop"
+    # Rust is not on the Windows image; rustup-init is the documented way in.
+    - Invoke-WebRequest -Uri https://win.rustup.rs/x86_64 -OutFile rustup-init.exe
+    - .\rustup-init.exe -y --profile minimal --default-toolchain stable
+    - $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
+    - rustc --version
+    - python -m pip install --quiet --upgrade pip maturin twine
+    # cp311-abi3: one wheel covers Python 3.11+, same as every other platform here.
+    - python -m maturin build --release -m rust/Cargo.toml -o dist
+    - Get-ChildItem dist
+    # Mint a one-shot PyPI token from the job's OIDC id_token, same exchange as
+    # scripts/pypi-publish does on Linux (that script is /bin/sh and cannot run here).
+    - |
+      $body = @{ token = $env:PYPI_ID_TOKEN } | ConvertTo-Json -Compress
+      $resp = Invoke-RestMethod -Method Post -Uri https://pypi.org/_/oidc/mint-token -ContentType 'application/json' -Body $body
+      $env:TWINE_USERNAME = '__token__'
+      $env:TWINE_PASSWORD = $resp.token
+      python -m twine upload --skip-existing --non-interactive dist/*.whl
+  artifacts:
+    paths:
+      - dist
+    expire_in: 1 week
+
 # Docs site -> GitLab Pages, main only. mkdocstrings reads src/fastumap statically (griffe), so
 # this job never installs fastumap and never needs a Rust toolchain: --no-install-project keeps
 # the sync to the docs extra alone, --no-sync stops `uv run` putting the project back. Builds in
