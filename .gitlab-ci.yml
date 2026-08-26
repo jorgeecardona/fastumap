@@ -167,10 +167,17 @@ wheels-windows:
     - saas-windows-medium-amd64
   needs: []
   allow_failure: true
+  #
+  # Only when pyproject.toml changed, i.e. on a release. MEASURED: this job takes ~10.5 min per
+  # run, and a Free namespace gets 400 compute minutes a month — on every push it would eat the
+  # whole quota in about 36 pushes, for a wheel that only matters when a version is published.
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        paths:
+          - pyproject.toml
   id_tokens:
     PYPI_ID_TOKEN:
       aud: pypi
