@@ -1,7 +1,7 @@
 # Projection
 
-`umap_project` reduces `(n, d)` to any output dimension: 2-D and 3-D for pictures, ~10-D as a
-preprocessing step before [clustering](clustering.md).
+`umap_project` reduces `(n, d)` to any output dimension: 2-D and 3-D for visualisation, around
+10-D as a preprocessing step before [clustering](clustering.md).
 
 --8<-- "README.md:usage"
 

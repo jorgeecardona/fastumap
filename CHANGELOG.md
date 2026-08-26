@@ -5,6 +5,18 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.19] - 2026-08-27
+
+### Changed
+- Documentation rewritten in a neutral, declarative register: the README (and therefore the PyPI
+  long description), the PyPI summary, and the docs site pages. No facts, numbers, tables or code
+  samples changed; the emphasis markup, rhetorical framing and second-person coaching did.
+- The opening no longer leads with import time as the headline claim. Import cost is a mechanism,
+  not a benefit, and on its own it reads as a micro-benchmark. It now leads with the constraint the
+  library exists for: environments where a JIT compiler at import time is not acceptable
+  (serverless functions, small or CPU-limited containers, autoscaled workers paying a cold start
+  per process). The import table stays, as evidence rather than as the claim.
+
 ## [0.2.18] - 2026-08-26
 
 ### Added

@@ -1,7 +1,7 @@
 # Clustering
 
-`cluster()` does **not** compute a 2-D layout first. That layout is an iterative SGD and takes
-minutes at a million points; clustering does not need it.
+`cluster()` does not compute a 2-D layout first. That layout is an iterative SGD and takes
+minutes at a million points, and clustering does not require it.
 
 --8<-- "README.md:clustering"
 
