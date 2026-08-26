@@ -1,9 +1,10 @@
 ---
 title: Constrained-vCPU (Fargate-like) performance probe
-status: open
+status: done
 area: production
 owner: null
 filed: 2026-08-25
+fixed_in: aeb9407
 scope: M
 verify: probe
 ---
