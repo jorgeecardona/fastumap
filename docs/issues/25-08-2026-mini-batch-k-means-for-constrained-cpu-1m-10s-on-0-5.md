@@ -1,9 +1,10 @@
 ---
 title: Mini-batch k-means for constrained CPU (1M/<10s on 0.5–2 vCPU)
-status: in-progress
+status: done
 area: capability
 owner: bronze-sentinel-79061
 filed: 2026-08-25
+fixed_in: 3d8842c3e819
 scope: L
 verify: probe
 ---
