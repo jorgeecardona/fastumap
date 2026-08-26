@@ -8,7 +8,9 @@
 # never drift from it. The pages add navigation, framing and cross-links, not duplicated prose.
 site_name: fastumap
 site_description: UMAP and clustering that import in milliseconds — no numba, no JIT at import.
-site_url: https://jorgeecardona.gitlab.io/fastumap/
+# The project has GitLab's unique-domain Pages enabled, so the site is served from this
+# generated hostname, not the path-based jorgeecardona.gitlab.io/fastumap/.
+site_url: https://fastumap-942a24.gitlab.io/
 repo_url: https://gitlab.com/jorgeecardona/fastumap
 repo_name: jorgeecardona/fastumap
 copyright: MIT licensed. An independent reimplementation of UMAP, not affiliated with its authors.
