@@ -73,9 +73,12 @@ from fastumap import cluster
 labels = cluster(embeddings, method="kmeans", n_clusters=20)     # k-means++ / Lloyd
 labels = cluster(embeddings, method="spectral", n_clusters=20)   # non-convex clusters
 labels = cluster(embeddings, method="dbscan")                    # density: finds k, noise = -1
+labels = cluster(embeddings, method="hdbscan")                   # density, no eps to pick
 ```
 
-Both take `n_clusters` and `metric` (`"euclidean"` / `"cosine"`) and are deterministic given
+`hdbscan` is the hierarchical version of `dbscan`: no `eps` at all, so clusters of *different*
+densities come out together (the root of the hierarchy is never a cluster, so a single-group
+dataset comes back all `-1`). `kmeans` and `spectral` take `n_clusters` and `metric` (`"euclidean"` / `"cosine"`) and are deterministic given
 `random_state`. k-means is our own k-means++ seeding and Lloyd iterations with a **blocked**
 assignment step, so the n×k distance matrix is never materialised — it holds to the low-memory
 constraint at scale. `spectral` reuses fastumap's own normalised-eigenvector machinery, then

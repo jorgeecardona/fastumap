@@ -5,7 +5,7 @@ fastumap reimplements UMAP from scratch. Clustering is the same. ``cluster()`` d
 a 2-D/3-D layout first. That layout is an iterative SGD and takes minutes at a million points.
 Clustering does not need it.
 
-Two methods, both ours:
+Four methods, all ours:
 
 - ``method="kmeans"`` — k-means (k-means++ seeding, Lloyd iterations, blocked assignment so the
   n-by-k distance matrix is never materialised). Fastest. You pick ``n_clusters``. Above ~50k
@@ -15,6 +15,11 @@ Two methods, both ours:
   normalised-adjacency eigenvectors (fastumap's own spectral machinery). k-means those. Finds
   non-convex clusters k-means alone misses. Needs ``fastumap[ann]`` only above ~16k points, where
   the kNN switches to the approximate backend.
+- ``method="dbscan"`` — density clustering. Finds clusters of any shape, labels outliers ``-1``,
+  and picks the number of clusters itself. You give it ``eps`` (or let it auto-pick).
+- ``method="hdbscan"`` — the hierarchical version: no ``eps`` at all, so clusters of different
+  densities come out together. You give it ``min_cluster_size``. The usual choice after a UMAP
+  reduction when you don't know k.
 
 Everything here is float32-friendly and blocked, so it holds to the low-memory / low-CPU
 constraints. The best shape at 1M (iteration count, a compiled k-means kernel) is a tuning
@@ -85,7 +90,8 @@ def cluster(
     n_iter: int = ...,
     random_state: int = ...,
     eps: float | None = ...,
-    min_samples: int = ...,
+    min_samples: int | None = ...,
+    min_cluster_size: int = ...,
     return_centroids: Literal[False] = ...,
 ) -> IntArray: ...
 @overload
@@ -99,7 +105,8 @@ def cluster(
     n_iter: int = ...,
     random_state: int = ...,
     eps: float | None = ...,
-    min_samples: int = ...,
+    min_samples: int | None = ...,
+    min_cluster_size: int = ...,
     return_centroids: Literal[True],
 ) -> ClusterResult: ...
 def cluster(
@@ -112,17 +119,21 @@ def cluster(
     n_iter: int = 50,
     random_state: int = 42,
     eps: float | None = None,
-    min_samples: int = 5,
+    min_samples: int | None = None,
+    min_cluster_size: int = 5,
     return_centroids: bool = False,
 ) -> IntArray | ClusterResult:
     """Cluster ``embeddings`` ``(n, d)`` into integer labels ``(n,)``.
 
-    Three methods:
+    Four methods:
 
     - ``"kmeans"`` and ``"spectral"`` take ``n_clusters`` (you pick k).
     - ``"dbscan"`` picks the number of clusters itself and labels outliers ``-1``. It takes
       ``eps`` (``None`` = auto) and ``min_samples`` instead of ``n_clusters``. Good when you don't
       know k or want noise handling; see :func:`dbscan`.
+    - ``"hdbscan"`` does the same but with no ``eps`` at all, so clusters of different densities
+      are found together. It takes ``min_cluster_size`` (and ``min_samples``, which defaults to
+      ``min_cluster_size`` here, not to dbscan's 5); see :func:`hdbscan`.
 
     ``metric`` is ``"euclidean"`` or ``"cosine"`` (cosine unit-normalises the rows). Deterministic
     given ``random_state``. Does NOT compute a layout. For a picture, call ``umap_project``.
@@ -136,13 +147,26 @@ def cluster(
     if metric not in ("euclidean", "cosine"):
         raise ValueError(f"unknown metric {metric!r}; use 'euclidean' or 'cosine'")
     work = _unit_rows(x) if metric == "cosine" else x
-    if method == "dbscan":
+    if method in ("dbscan", "hdbscan"):
         if return_centroids:
             raise ValueError(
-                "return_centroids is not supported for method='dbscan' (noise has no centroid)"
+                f"return_centroids is not supported for method={method!r} (noise has no centroid)"
             )
-        # work is already metric-normalised, so run dbscan in euclidean space on it.
-        return dbscan(work, eps=eps, min_samples=min_samples, metric="euclidean")
+        # work is already metric-normalised, so run the density methods in euclidean space on it.
+        if method == "dbscan":
+            # dbscan's own default; hdbscan's is min_cluster_size, so it takes None straight through.
+            return dbscan(
+                work,
+                eps=eps,
+                min_samples=5 if min_samples is None else min_samples,
+                metric="euclidean",
+            )
+        return hdbscan(
+            work,
+            min_cluster_size=min_cluster_size,
+            min_samples=min_samples,
+            metric="euclidean",
+        )
     if n_clusters is None:
         raise ValueError(f"method={method!r} requires n_clusters")
     if method == "kmeans":
@@ -152,7 +176,9 @@ def cluster(
         # spectral returns labels only; recover input-space centroids from them when asked.
         centroids = _centroids_from_labels(work, labels, n_clusters) if return_centroids else None
     else:
-        raise ValueError(f"unknown method {method!r}; use 'kmeans', 'spectral', or 'dbscan'")
+        raise ValueError(
+            f"unknown method {method!r}; use 'kmeans', 'spectral', 'dbscan', or 'hdbscan'"
+        )
     if return_centroids:
         assert centroids is not None
         return ClusterResult(labels, centroids, _inertia(work, labels, centroids))
@@ -272,6 +298,249 @@ def _dbscan(indices: IntArray, dists: FloatArray, eps: float, min_samples: int) 
             if row_within[pos] and core[int(row_idx[pos])]:
                 labels[i] = labels[int(row_idx[pos])]
                 break
+    return labels
+
+
+def hdbscan(
+    embeddings: FloatArray,
+    *,
+    min_cluster_size: int = 5,
+    min_samples: int | None = None,
+    metric: str = "euclidean",
+    n_neighbors: int = 30,
+) -> IntArray:
+    """Hierarchical density clustering (HDBSCAN). Like :func:`dbscan` but with no ``eps`` to pick,
+    so clusters of *different* densities are all found at once. Outliers are ``-1``.
+
+    DBSCAN cuts the density hierarchy at one global ``eps``: pick it loose and two nearby clusters
+    merge, pick it tight and the sparse cluster becomes noise. HDBSCAN builds the whole hierarchy
+    and then keeps the branches that persist longest over it, so each cluster is effectively cut at
+    its own density.
+
+    Four steps, all over fastumap's kNN: the *core distance* of a point (its ``min_samples``-th
+    neighbour distance) inflates every edge into a *mutual reachability* distance
+    ``max(core_i, core_j, d_ij)``; an MST over those edges gives the single-linkage hierarchy;
+    branches smaller than ``min_cluster_size`` are condensed away as noise; what is left is scored
+    by stability (excess of mass) and the best non-overlapping set wins.
+
+    ``min_cluster_size`` is the real knob: the smallest group you are willing to call a cluster.
+    ``min_samples`` (default: ``min_cluster_size``) sets how conservative the density estimate is —
+    raise it to push more points into noise.
+
+    One consequence to know before you call it: the root of the hierarchy is never a cluster, so
+    data with only *one* dense group in it comes back all ``-1``. HDBSCAN answers "which groups
+    stand out from each other", not "is there a group here". This matches scikit-learn's
+    ``allow_single_cluster=False`` default.
+
+    This is *approximate* HDBSCAN: the MST is built over the ``n_neighbors`` kNN edges, not the
+    full mutual-reachability graph (the same tradeoff RAPIDS makes), so a cluster whose points are
+    all further apart than their ``n_neighbors``-th neighbour can split. The kNN graph may also be
+    disconnected; the pieces are joined at infinite distance, which is the honest answer for
+    points that share no neighbourhood. Deterministic given the kNN.
+    """
+    from .neighbors import knn_graph  # lazy: keeps import light
+
+    x = np.ascontiguousarray(embeddings, dtype=np.float64)
+    if x.ndim != 2:
+        raise ValueError("embeddings must be 2-D (n, d)")
+    if metric not in ("euclidean", "cosine"):
+        raise ValueError(f"unknown metric {metric!r}; use 'euclidean' or 'cosine'")
+    if min_cluster_size < 2:
+        raise ValueError("min_cluster_size must be >= 2")
+    samples = min_cluster_size if min_samples is None else min_samples
+    if samples < 1:
+        raise ValueError("min_samples must be >= 1")
+    work = _unit_rows(x) if metric == "cosine" else x
+    n = work.shape[0]
+    if n < 2:
+        return np.full(n, -1, dtype=np.int64)
+    k = min(max(n_neighbors, samples + 1), n)
+    indices, dists = knn_graph(work, k, metric=metric, mode="auto")
+    core = dists[:, min(samples, k - 1)]  # min_samples-th neighbour; column 0 is self
+    return _hdbscan(indices, dists, core, min_cluster_size)
+
+
+def _hdbscan(
+    indices: IntArray, dists: FloatArray, core: FloatArray, min_cluster_size: int
+) -> IntArray:
+    """HDBSCAN over a precomputed kNN and its core distances: MST -> single-linkage tree ->
+    condensed tree -> stability selection -> labels."""
+    n = indices.shape[0]
+    edges = _mutual_reachability_mst(indices, dists, core)
+    left, right, height, size = _single_linkage(edges, n)
+    rows = _condense(left, right, height, size, n, min_cluster_size)
+    return _labels_from_condensed(rows, n)
+
+
+def _mutual_reachability_mst(
+    indices: IntArray, dists: FloatArray, core: FloatArray
+) -> list[tuple[float, int, int]]:
+    """Kruskal over the kNN edges, weighted by mutual reachability. Returns exactly ``n - 1``
+    edges ``(weight, a, b)`` ascending. The kNN graph can be disconnected, so whatever components
+    survive are joined at ``inf`` — a merge that costs infinite density, i.e. lambda 0."""
+    n, k = indices.shape
+    src = np.repeat(np.arange(n, dtype=np.int64), k - 1)
+    dst = np.ascontiguousarray(indices[:, 1:]).ravel()
+    d = np.ascontiguousarray(dists[:, 1:]).ravel()
+    weight = np.maximum(np.maximum(core[src], core[dst]), d)
+    order = np.argsort(weight, kind="stable")
+    # .tolist() once: iterating numpy scalars in the Kruskal loop below is several times slower.
+    ws = weight[order].tolist()
+    as_ = src[order].tolist()
+    bs = dst[order].tolist()
+
+    parent = list(range(n))
+
+    def find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]  # path halving
+            a = parent[a]
+        return a
+
+    mst: list[tuple[float, int, int]] = []
+    for pos in range(len(ws)):
+        ra, rb = find(as_[pos]), find(bs[pos])
+        if ra == rb:
+            continue
+        parent[rb] = ra
+        mst.append((ws[pos], as_[pos], bs[pos]))
+        if len(mst) == n - 1:
+            break
+    if len(mst) < n - 1:  # disconnected kNN graph: bridge the components at infinite distance
+        roots = [i for i in range(n) if find(i) == i]
+        for other in roots[1:]:
+            parent[find(other)] = find(roots[0])
+            mst.append((float("inf"), roots[0], other))
+    return mst
+
+
+def _single_linkage(
+    mst: list[tuple[float, int, int]], n: int
+) -> tuple[list[int], list[int], list[float], list[int]]:
+    """MST edges (ascending) -> single-linkage tree. Node ``i < n`` is a point; node ``n + j`` is
+    the merge made by edge ``j``, joining ``left[j]`` and ``right[j]`` at ``height[j]``."""
+    parent = list(range(n))
+    node_of = list(range(n))  # union-find root -> the tree node that root currently stands for
+    size = [1] * (2 * n - 1)
+    left = [0] * (n - 1)
+    right = [0] * (n - 1)
+    height = [0.0] * (n - 1)
+
+    def find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    for j, (w, a, b) in enumerate(mst):
+        ra, rb = find(a), find(b)
+        na, nb = node_of[ra], node_of[rb]
+        node = n + j
+        left[j], right[j], height[j] = na, nb, w
+        size[node] = size[na] + size[nb]
+        parent[rb] = ra
+        node_of[ra] = node
+    return left, right, height, size
+
+
+def _condense(
+    left: list[int],
+    right: list[int],
+    height: list[float],
+    size: list[int],
+    n: int,
+    min_cluster_size: int,
+) -> list[tuple[int, int, float, int]]:
+    """Walk the single-linkage tree down from the root, dropping every branch smaller than
+    ``min_cluster_size``. Returns rows ``(cluster, child, lambda, child_size)``: ``child < n`` is a
+    point leaving ``cluster`` at that lambda, ``child >= n`` is a sub-cluster born there. Cluster
+    ids start at ``n`` (the root) and always exceed their parent's."""
+
+    def subtree_points(node: int) -> list[int]:
+        points: list[int] = []
+        stack = [node]
+        while stack:
+            cur = stack.pop()
+            if cur < n:
+                points.append(cur)
+            else:
+                stack.append(left[cur - n])
+                stack.append(right[cur - n])
+        return points
+
+    rows: list[tuple[int, int, float, int]] = []
+    next_label = n + 1
+    stack = [(2 * n - 2, n)]  # (tree node, the cluster id it belongs to)
+    while stack:
+        node, label = stack.pop()
+        if node < n:
+            continue
+        j = node - n
+        lam = 1.0 / height[j] if height[j] > 0.0 else float("inf")
+        lc, rc = left[j], right[j]
+        big_l, big_r = size[lc] >= min_cluster_size, size[rc] >= min_cluster_size
+        if big_l and big_r:  # a real split: two new clusters born at lam
+            for child in (lc, rc):
+                rows.append((label, next_label, lam, size[child]))
+                stack.append((child, next_label))
+                next_label += 1
+        elif not big_l and not big_r:  # the whole branch falls out; nothing below is a cluster
+            for point in subtree_points(node):
+                rows.append((label, point, lam, 1))
+        else:  # one side is too small: it falls out, the other stays this same cluster
+            small, big = (lc, rc) if not big_l else (rc, lc)
+            for point in subtree_points(small):
+                rows.append((label, point, lam, 1))
+            stack.append((big, label))
+    return rows
+
+
+def _labels_from_condensed(rows: list[tuple[int, int, float, int]], n: int) -> IntArray:
+    """Score every cluster in the condensed tree by stability and keep the best non-overlapping
+    set (excess of mass), then label each point by the deepest kept cluster above it.
+
+    Stability of a cluster is ``sum over its children of (lambda_leave - lambda_birth) * size`` —
+    how much density range it survives, weighted by how many points survive it. A cluster is kept
+    only if it beats the total of its descendants; otherwise the descendants win. The root is
+    never a cluster (it holds everything, so "one big cluster" is never an answer here)."""
+    labels = np.full(n, -1, dtype=np.int64)
+    if not rows:
+        return labels
+    root = n
+    birth: dict[int, float] = {root: 0.0}
+    children: dict[int, list[int]] = {}
+    for cluster, child, lam, _ in rows:
+        if child >= n:
+            birth[child] = lam
+            children.setdefault(cluster, []).append(child)
+    stability: dict[int, float] = dict.fromkeys(birth, 0.0)
+    for cluster, _, lam, count in rows:
+        stability[cluster] += (lam - birth[cluster]) * count
+
+    # Bottom-up: a child always has a larger id than its parent, so descending order is leaves-up.
+    selected = {c for c in stability if c != root}
+    for cluster in sorted(selected, reverse=True):
+        below = sum(stability[c] for c in children.get(cluster, ()))
+        if below > stability[cluster]:
+            selected.discard(cluster)
+            stability[cluster] = below  # the descendants' score propagates up in its place
+        else:
+            stack = list(children.get(cluster, ()))
+            while stack:  # this cluster wins, so nothing under it can also be a cluster
+                sub = stack.pop()
+                selected.discard(sub)
+                stack.extend(children.get(sub, ()))
+    if not selected:
+        return labels
+
+    label_of = {c: i for i, c in enumerate(sorted(selected))}
+    up = {child: cluster for cluster, child, _, _ in rows if child not in selected}
+    for point in range(n):
+        node = point
+        while node in up:
+            node = up[node]
+        if node in label_of:
+            labels[point] = label_of[node]
     return labels
 
 

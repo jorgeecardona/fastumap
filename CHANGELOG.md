@@ -5,6 +5,20 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.12] - 2026-08-26
+
+### Added
+- **`hdbscan(...)` and `cluster(method="hdbscan")`** — hierarchical density clustering. Same job as
+  `dbscan` but with no `eps` to pick, so clusters of *different* densities are found together:
+  core distances inflate the kNN edges into mutual-reachability distances, an MST over those gives
+  the single-linkage hierarchy, branches under `min_cluster_size` are condensed away as noise, and
+  the surviving branches are chosen by stability (excess of mass). Verified against scikit-learn's
+  `HDBSCAN` (adjusted Rand > 0.95) on a dense/diffuse pair that *no* single `eps` can separate.
+  `min_cluster_size` (default 5) is the knob; `min_samples` defaults to it. Approximate HDBSCAN:
+  the MST is built over the `n_neighbors` kNN edges, and a disconnected kNN graph is bridged at
+  infinite distance. The root is never a cluster, so single-group data comes back all `-1` (same as
+  scikit-learn's `allow_single_cluster=False`). Exported at the top level.
+
 ## [0.2.11] - 2026-08-25
 
 ### Added
