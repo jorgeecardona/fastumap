@@ -1,4 +1,4 @@
-.PHONY: sync lint format typecheck test check build grade bench bench-report tox fargate constrained install-hooks
+.PHONY: sync lint format typecheck test check build grade bench bench-report tox fargate constrained minibatch-1m install-hooks
 
 sync:
 	uv sync
@@ -46,6 +46,11 @@ fargate:
 # and 2 vCPU, into a dated table. Needs Docker and a wheel in dist/ (`make build`). Slow (~15 min).
 constrained:
 	sh bench/constrained.sh
+
+# The roadmap's mini-batch bar: 1M x 128 into ~64 groups under 10 s on 2 vCPU, inertia within ~5%
+# of full Lloyd. Needs Docker, a wheel in dist/ (`make build`) and the cached SIFT1M descriptors.
+minibatch-1m:
+	sh bench/minibatch_1m.sh
 
 bump:
 	sh scripts/bump-version $(TYPE)

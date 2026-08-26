@@ -5,6 +5,33 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.17] - 2026-08-26
+
+### Added
+- **Mini-batch k-means** (Sculley 2010) in the native kernel, and `kmeans(..., batch_size=...)` to
+  control it. Full Lloyd sweeps all `n` rows every iteration; mini-batch samples `batch_size` rows
+  and moves only the centroids they land on, so per-iteration work drops from `O(n*k*d)` to
+  `O(batch*k*d)`. It engages automatically above 200,000 rows.
+
+  MEASURED on SIFT1M (1,000,000 x 128, k=64) inside a `docker --cpus=2` container: **5.2 s against
+  full Lloyd's 25.3 s, at 1.010x the inertia** — 4.9x faster for a 1% worse objective, clearing the
+  roadmap's bar of under 10 s within ~5%. On MNIST 60000x784 it lands at 1.013x Lloyd.
+
+  The switch is on `n` **alone, never on core count**, so the same input and seed give the same
+  labels on any machine. `batch_size=0` forces full Lloyd at any size; a positive int forces
+  mini-batch with that batch.
+
+  KNOWN WEAKNESS, pinned by a test rather than hidden: on *perfectly separated* clusters mini-batch
+  can leave two centroids inside one group and none in another (measured 4.8x worse inertia on
+  synthetic blobs 8 sigma apart), because the running-mean update cannot walk a centroid back
+  across an empty gap the way Lloyd's recompute can. Real, overlapping data does not trigger it.
+- `make minibatch-1m` (`bench/minibatch_1m.sh` + `bench/minibatch_1m.py`) — the probe behind those
+  numbers, writing a dated report to `docs/bench/`.
+
+### Changed
+- The README's clustering section no longer tells you to avoid clustering on a fractional-vCPU
+  box. That advice was written before this kernel existed and is now measurably wrong.
+
 ## [0.2.16] - 2026-08-26
 
 ### Added

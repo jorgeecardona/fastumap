@@ -38,6 +38,13 @@ from ._types import FloatArray, IntArray
 
 _BLOCK = 4096  # rows per block in the assignment step; bounds peak memory to block-by-k
 _ACCEL_MIN = 50_000  # below this the numpy path is fast and deterministic; above, use the accel
+# Above this, full Lloyd's per-iteration O(n*k*d) pass is the wall on a small container, so the
+# default switches to mini-batch. Chosen by n ALONE, never by core count: gating on cores would
+# make the same input and seed give different labels on different machines, which is exactly the
+# guarantee this library sells. batch_size=0 forces full Lloyd back on at any size.
+_MINIBATCH_MIN = 200_000
+_MINIBATCH_BATCH = 10_000  # rows per iteration; ~2 full passes of total work at the default n_iter
+_MINIBATCH_ITER = 100  # mini-batch needs many cheap passes where Lloyd needs few expensive ones
 
 try:
     # Native k-means, built into the package as fastumap._accel: a matrixmultiply-GEMM + rayon
@@ -46,6 +53,13 @@ try:
     _accel_kmeans = importlib.import_module("fastumap._accel").kmeans
 except (ImportError, AttributeError):
     _accel_kmeans = None
+
+try:
+    # Mini-batch k-means (Sculley 2010), the same kernel's CPU-constrained sibling. See the
+    # batch_size docs on `kmeans` for when it is used.
+    _accel_minibatch = importlib.import_module("fastumap._accel").minibatch_kmeans
+except (ImportError, AttributeError):
+    _accel_minibatch = None
 
 
 def _unit_rows(x: FloatArray) -> FloatArray:
@@ -643,19 +657,52 @@ def _centroids_from_labels(x: FloatArray, labels: IntArray, k: int) -> FloatArra
 
 
 def kmeans(
-    x: FloatArray, n_clusters: int, *, n_iter: int = 50, random_state: int = 42
+    x: FloatArray,
+    n_clusters: int,
+    *,
+    n_iter: int = 50,
+    random_state: int = 42,
+    batch_size: int | None = None,
 ) -> tuple[IntArray, FloatArray]:
     """Lloyd's k-means with k-means++ init. Returns ``(labels, centroids)``.
 
     Uses the built-in native kernel (fastumap._accel) above ``_ACCEL_MIN`` points when present
     (~10s at 1M x 128 vs minutes for numpy). Otherwise the pure-numpy path here, which is
     deterministic to the byte. Both converge to the same objective within the usual tolerance.
+
+    ``batch_size`` picks between full Lloyd and **mini-batch** k-means (Sculley 2010). Full Lloyd
+    touches all ``n`` rows every iteration, which is fine with cores to spare and slow on a
+    0.5-2 vCPU container. Mini-batch samples ``batch_size`` rows per iteration and moves only the
+    centroids they land on, so per-iteration work drops from ``O(n*k*d)`` to ``O(batch*k*d)`` at a
+    small cost in inertia.
+
+    - ``None`` (default) — mini-batch above ``_MINIBATCH_MIN`` rows, full Lloyd below. The switch
+      is on ``n`` only, so the same input and seed give the same labels on any machine.
+    - ``0`` — force full Lloyd at any size.
+    - a positive int — force mini-batch with that batch size.
+
+    Mini-batch needs the native kernel; without it the numpy path runs full Lloyd regardless.
     """
     if n_clusters < 1:
         raise ValueError("n_clusters must be >= 1")
     if n_clusters > x.shape[0]:
         raise ValueError(f"n_clusters={n_clusters} exceeds n={x.shape[0]}")
-    if _accel_kmeans is not None and x.shape[0] >= _ACCEL_MIN:
+    if batch_size is not None and batch_size < 0:
+        raise ValueError("batch_size must be >= 0 (0 forces full Lloyd, None picks by n)")
+    n = x.shape[0]
+    auto_minibatch = batch_size is None and n >= _MINIBATCH_MIN
+    if _accel_minibatch is not None and (auto_minibatch or (batch_size or 0) > 0):
+        batch = _MINIBATCH_BATCH if batch_size in (None, 0) else batch_size
+        # Mini-batch trades an expensive pass for many cheap ones, so it wants more iterations
+        # than Lloyd. Only override a caller who left n_iter at its Lloyd default.
+        iters = _MINIBATCH_ITER if n_iter == 50 else n_iter
+        data = np.ascontiguousarray(x, dtype=np.float64)
+        labels = np.asarray(
+            _accel_minibatch(data, n_clusters, iters, int(batch), int(random_state)),
+            dtype=np.int64,
+        )
+        return labels, _centroids_from_labels(data, labels, n_clusters)
+    if _accel_kmeans is not None and n >= _ACCEL_MIN:
         data = np.ascontiguousarray(x, dtype=np.float64)
         labels = np.asarray(
             _accel_kmeans(data, n_clusters, n_iter, int(random_state)), dtype=np.int64

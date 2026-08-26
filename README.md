@@ -106,9 +106,25 @@ More knobs:
 For large inputs fastumap's native k-means kernel — compiled into the wheel (matrixmultiply SIMD
 GEMM + rayon over row-blocks) — replaces the inner loop: it clusters **1,000,000 × 128 into 64
 groups in ~10 s** on a 16-core machine (measured on SIFT1M), versus minutes for the numpy path,
-and engages automatically above 50k points. That is a **multi-core batch**
-figure — on a throttled container (0.5–2 vCPU) the same job is CPU-bound and takes far longer, so
-run clustering on a real machine, not a fractional-vCPU serving box.
+and engages automatically above 50k points.
+
+Above 200k points it also switches to **mini-batch k-means**, which samples `batch_size` rows per
+iteration instead of sweeping all of them, so clustering is no longer something you need a big
+machine for. Measured on SIFT1M inside a `docker --cpus=2` container: **5.2 s against full Lloyd's
+25.3 s, at 1.010× the inertia** — 4.9× faster for a 1% worse objective.
+
+```python
+labels = cluster(x, method="kmeans", n_clusters=64)   # mini-batch above 200k rows
+labels, cent = kmeans(x, 64, batch_size=0)            # force full Lloyd at any size
+labels, cent = kmeans(x, 64, batch_size=5000)         # force mini-batch, your batch
+```
+
+The switch is on `n` alone, never on the core count, so the same input and seed give the same
+labels on every machine. One caveat worth knowing: on *perfectly separated* clusters mini-batch
+can leave two centroids inside one group (measured 4.8× worse inertia on synthetic blobs 8σ
+apart), because its running-mean update cannot walk a centroid back across an empty gap. Real
+embeddings overlap and do not trigger this — MNIST lands at 1.013× Lloyd — but `batch_size=0` is
+there if your data is unusually clean.
 
 <!-- --8<-- [end:clustering] -->
 ## Quality relative to umap-learn

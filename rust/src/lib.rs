@@ -163,7 +163,12 @@ fn kmeans<'py>(
     Ok(numpy::ndarray::Array1::from_vec(labels).into_pyarray_bound(py))
 }
 
-fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u64) -> Vec<i64> {
+/// k-means++ seeding, shared by full Lloyd and mini-batch.
+///
+/// Full k-means++ is O(n*k*d) — the fixed cost that dominates at 1M. Seed it from a random
+/// subsample instead (what faiss/sklearn do at scale); the sample captures the distribution, then
+/// the iterations refine against the real data.
+fn kmeanspp_seed(x: &[f32], n: usize, dim: usize, k: usize, rng: &mut u64) -> Vec<f32> {
     let dist2 = |a: &[f32], b: &[f32]| -> f32 {
         let mut s = 0.0f32;
         for d in 0..dim {
@@ -172,9 +177,6 @@ fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u
         }
         s
     };
-
-    // ─── k-means++ seeding ───
-    let mut rng = seed ^ 0x9E3779B97F4A7C15;
     let mut centroids = vec![0.0f32; k * dim];
     // Full k-means++ is O(n*k*d) — the fixed cost that dominates at 1M. Seed it from a random
     // subsample instead (what faiss/sklearn do at scale); the sample captures the distribution,
@@ -183,14 +185,14 @@ fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u
     let sx: Vec<f32> = if sn < n {
         let mut xs = vec![0.0f32; sn * dim];
         for s in 0..sn {
-            let i = (splitmix64(&mut rng) % n as u64) as usize;
+            let i = (splitmix64(rng) % n as u64) as usize;
             xs[s * dim..s * dim + dim].copy_from_slice(&x[i * dim..i * dim + dim]);
         }
         xs
     } else {
         x.to_vec()
     };
-    let first = (splitmix64(&mut rng) % sn as u64) as usize;
+    let first = (splitmix64(rng) % sn as u64) as usize;
     centroids[0..dim].copy_from_slice(&sx[first * dim..first * dim + dim]);
     let mut closest: Vec<f32> = (0..sn)
         .into_par_iter()
@@ -198,7 +200,7 @@ fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u
         .collect();
     for c in 1..k {
         let total: f32 = closest.par_iter().sum();
-        let target = (splitmix64(&mut rng) as f64 / u64::MAX as f64) as f32 * total;
+        let target = (splitmix64(rng) as f64 / u64::MAX as f64) as f32 * total;
         let mut chosen = sn - 1;
         if total > 0.0 {
             let mut acc = 0.0f32;
@@ -210,7 +212,7 @@ fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u
                 }
             }
         } else {
-            chosen = (splitmix64(&mut rng) % sn as u64) as usize;
+            chosen = (splitmix64(rng) % sn as u64) as usize;
         }
         centroids[c * dim..c * dim + dim].copy_from_slice(&sx[chosen * dim..chosen * dim + dim]);
         let cen = centroids[c * dim..c * dim + dim].to_vec();
@@ -221,34 +223,48 @@ fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u
             }
         });
     }
+    centroids
+}
 
-    // ─── Lloyd iterations (GEMM assignment) ───
-    let mut labels = vec![0i64; n];
-    let mut g = vec![0.0f32; n * k]; // G = X @ centroidsᵀ, reused each iteration
-    for _ in 0..n_iter {
-        let mut c_sq = vec![0.0f32; k];
-        for j in 0..k {
-            let mut s = 0.0f32;
-            for d in 0..dim {
-                let v = centroids[j * dim + d];
-                s += v * v;
-            }
-            c_sq[j] = s;
+/// Nearest centroid for every row of `x` (an `(rows, dim)` block), as one GEMM plus an argmin.
+///
+/// `G = X @ centroidsᵀ` (matrixmultiply's SIMD kernel); the nearest centroid is the argmin over
+/// `‖c‖² − 2·G[i,·]`, since the `‖x‖²` term is constant per row and drops out. `g` is caller-owned
+/// scratch of at least `rows * k`, so a loop can reuse one allocation.
+fn assign_gemm(
+    x: &[f32],
+    rows: usize,
+    dim: usize,
+    centroids: &[f32],
+    k: usize,
+    g: &mut [f32],
+) -> Vec<i64> {
+    let mut c_sq = vec![0.0f32; k];
+    for j in 0..k {
+        let mut s = 0.0f32;
+        for d in 0..dim {
+            let v = centroids[j * dim + d];
+            s += v * v;
         }
-        // G (n×k) = X (n×dim) @ centroidsᵀ. centroids is (k×dim) row-major; viewing it as B with
-        // row-stride 1, col-stride dim gives Cᵀ (dim×k) without a copy. matrixmultiply is
-        // single-threaded, so split X into per-thread row-blocks and GEMM each independently.
-        let n_threads = rayon::current_num_threads().max(1);
-        let block = n.div_ceil(n_threads).max(1);
-        g.par_chunks_mut(block * k).enumerate().for_each(|(bi, gchunk)| {
+        c_sq[j] = s;
+    }
+    // centroids is (k×dim) row-major; viewing it as B with row-stride 1, col-stride dim gives
+    // Cᵀ (dim×k) without a copy. matrixmultiply is single-threaded, so split X into per-thread
+    // row-blocks and GEMM each independently.
+    let n_threads = rayon::current_num_threads().max(1);
+    let block = rows.div_ceil(n_threads).max(1);
+    g[..rows * k]
+        .par_chunks_mut(block * k)
+        .enumerate()
+        .for_each(|(bi, gchunk)| {
             let start = bi * block;
-            let rows = gchunk.len() / k;
-            if rows == 0 {
+            let chunk_rows = gchunk.len() / k;
+            if chunk_rows == 0 {
                 return;
             }
             unsafe {
                 matrixmultiply::sgemm(
-                    rows,
+                    chunk_rows,
                     dim,
                     k,
                     1.0,
@@ -265,22 +281,33 @@ fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u
                 );
             }
         });
-        let next: Vec<i64> = (0..n)
-            .into_par_iter()
-            .map(|i| {
-                let row = &g[i * k..i * k + k];
-                let mut best = 0usize;
-                let mut best_v = f32::INFINITY;
-                for j in 0..k {
-                    let val = c_sq[j] - 2.0 * row[j]; // = ‖x-c_j‖² minus the per-row constant ‖x‖²
-                    if val < best_v {
-                        best_v = val;
-                        best = j;
-                    }
+    (0..rows)
+        .into_par_iter()
+        .map(|i| {
+            let row = &g[i * k..i * k + k];
+            let mut best = 0usize;
+            let mut best_v = f32::INFINITY;
+            for j in 0..k {
+                let val = c_sq[j] - 2.0 * row[j]; // = ‖x-c_j‖² minus the per-row constant ‖x‖²
+                if val < best_v {
+                    best_v = val;
+                    best = j;
                 }
-                best as i64
-            })
-            .collect();
+            }
+            best as i64
+        })
+        .collect()
+}
+
+fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u64) -> Vec<i64> {
+    let mut rng = seed ^ 0x9E3779B97F4A7C15;
+    let mut centroids = kmeanspp_seed(x, n, dim, k, &mut rng);
+
+    // ─── Lloyd iterations (GEMM assignment) ───
+    let mut labels = vec![0i64; n];
+    let mut g = vec![0.0f32; n * k]; // G = X @ centroidsᵀ, reused each iteration
+    for _ in 0..n_iter {
+        let next = assign_gemm(x, n, dim, &centroids, k, &mut g);
         // Converged once almost no point changes cluster. Exact equality never triggers at 1M
         // (a handful always flip), so allow a 0.1% tolerance — real data stops well before n_iter.
         let changed = next.iter().zip(labels.iter()).filter(|(a, b)| a != b).count();
@@ -329,9 +356,110 @@ fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u
     labels
 }
 
+/// Mini-batch k-means (Sculley 2010), for when CPU is the constraint rather than memory.
+///
+/// Full Lloyd touches all n rows on every iteration: at 1M x 128 with k=64 that is ~154
+/// core-seconds, which is seconds on a 16-core box but minutes on a 0.5-2 vCPU container. This
+/// samples `batch` rows per iteration instead and moves only the centroids those rows land on, so
+/// per-iteration work is O(batch*k*d) rather than O(n*k*d).
+///
+/// Each sampled point pulls its centroid toward itself by a per-centroid learning rate 1/v[c],
+/// where v[c] counts how many points that centroid has ever absorbed. The rate decays on its own,
+/// so the centroids settle without a schedule to tune.
+///
+/// One full assignment pass at the end produces the labels — unavoidable, since every row needs
+/// one. So the total cost is roughly two full passes instead of `n_iter` of them.
+///
+/// Deterministic given `seed`: the batch is drawn from the same seeded SplitMix64 stream, and the
+/// within-batch update order is fixed. Thread count does not change the result.
+fn minibatch_kmeans_impl(
+    x: &[f32],
+    n: usize,
+    dim: usize,
+    k: usize,
+    n_iter: usize,
+    batch: usize,
+    seed: u64,
+) -> Vec<i64> {
+    let mut rng = seed ^ 0x9E3779B97F4A7C15;
+    let mut centroids = kmeanspp_seed(x, n, dim, k, &mut rng);
+    let batch = batch.min(n).max(1);
+
+    // v[c] starts at 1, not 0. With v[c]=0 the first point to reach a centroid gives eta=1 and
+    // teleports it exactly onto that one point, throwing away the k-means++ placement that put it
+    // there — which is how two centroids end up inside one blob while another blob goes uncovered.
+    // Starting at 1 treats the seed as one prior observation, so the first step is a half-step.
+    let mut counts = vec![1.0f32; k]; // v[c]: points this centroid has absorbed, plus the seed
+    let mut xb = vec![0.0f32; batch * dim];
+    let mut g = vec![0.0f32; batch * k];
+    for _ in 0..n_iter {
+        // Draw the batch with replacement. Sampling into a contiguous buffer keeps the GEMM
+        // below on one dense block instead of gathering rows inside it.
+        for b in 0..batch {
+            let i = (splitmix64(&mut rng) % n as u64) as usize;
+            xb[b * dim..b * dim + dim].copy_from_slice(&x[i * dim..i * dim + dim]);
+        }
+        let assigned = assign_gemm(&xb, batch, dim, &centroids, k, &mut g);
+        // Sequential on purpose: the learning rate for a point depends on how many points its
+        // centroid has already taken in THIS pass, so the order is part of the algorithm. It is
+        // also cheap — O(batch*dim), against the GEMM's O(batch*k*dim).
+        for (b, &c) in assigned.iter().enumerate() {
+            let c = c as usize;
+            counts[c] += 1.0;
+            let eta = 1.0 / counts[c];
+            let (xi, cen) = (&xb[b * dim..b * dim + dim], &mut centroids[c * dim..c * dim + dim]);
+            for d in 0..dim {
+                cen[d] += eta * (xi[d] - cen[d]);
+            }
+        }
+    }
+
+    // Label every row against the settled centroids: one full pass, blocked so the scratch
+    // buffer stays bounded rather than allocating n*k floats (at 1M x 64 that alone is 256 MB).
+    let block = 65_536.min(n).max(1);
+    let mut gfull = vec![0.0f32; block * k];
+    let mut labels = vec![0i64; n];
+    let mut start = 0usize;
+    while start < n {
+        let rows = block.min(n - start);
+        let part = assign_gemm(
+            &x[start * dim..(start + rows) * dim],
+            rows,
+            dim,
+            &centroids,
+            k,
+            &mut gfull,
+        );
+        labels[start..start + rows].copy_from_slice(&part);
+        start += rows;
+    }
+    labels
+}
+
+/// Mini-batch k-means: the CPU-constrained counterpart of `kmeans`. See `minibatch_kmeans_impl`.
+#[pyfunction]
+fn minibatch_kmeans<'py>(
+    py: Python<'py>,
+    data: PyReadonlyArray2<'py, f64>,
+    n_clusters: usize,
+    n_iter: usize,
+    batch_size: usize,
+    seed: u64,
+) -> PyResult<Bound<'py, PyArray1<i64>>> {
+    let shape = data.shape();
+    let n = shape[0];
+    let dim = shape[1];
+    let x: Vec<f32> = data.as_slice()?.iter().map(|&v| v as f32).collect();
+    let labels = py.allow_threads(|| {
+        minibatch_kmeans_impl(&x, n, dim, n_clusters, n_iter, batch_size, seed)
+    });
+    Ok(numpy::ndarray::Array1::from_vec(labels).into_pyarray_bound(py))
+}
+
 #[pymodule]
 fn _accel(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(optimize_layout, m)?)?;
     m.add_function(wrap_pyfunction!(kmeans, m)?)?;
+    m.add_function(wrap_pyfunction!(minibatch_kmeans, m)?)?;
     Ok(())
 }
