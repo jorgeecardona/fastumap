@@ -13,3 +13,40 @@ The README claims "~10s at 1M multi-core, minutes on 0.5–2 vCPU" but nothing v
 Add a reproducible constrained-CPU probe (cgroup / docker --cpus) that records fit AND cluster wall-clock at several n under 0.5, 1, and 2 vCPU.
 
 Done when: a script emits a table of times under each cap whose shape matches Jorge's observed Fargate curve (PROBED).
+## Update 2026-08-26 — probe built and measured; the shape does NOT match production
+
+DONE: `make constrained` (bench/constrained.sh + bench/constrained.py) runs `umap_project` AND
+`cluster` at n=250/500/1000/5000 x 1024 under `docker --cpus=0.5`, `1` and `2` and writes a dated
+table to docs/bench/. It installs a wheel built from the tree, so the container needs no Rust and
+what is measured is the artifact PyPI ships. Reproducible: two consecutive runs agreed within ~10%
+at every point.
+
+MEASURED at 0.5 vCPU (docs/bench/constrained-2026-08-26.md), against the ground truth in this issue:
+
+| n | Fargate (observed) | this probe |
+|---|---:|---:|
+| 250 | 7.6 s | 3.5 s |
+| 500 | 28 s | 2.8 s |
+| 1000 | 83 s | 5.6 s |
+| 5000 | 270 s | 33.2 s |
+
+So the done-condition ("whose shape matches Jorge's observed Fargate curve") is NOT met, and this
+issue stays open for that reason. It is not just an offset — the shapes differ. Production's
+250->500 step is 3.7x; the probe's is 0.87x (n=500 is *faster* than n=250, so fixed startup cost
+dominates at small n). Production's 5000/250 ratio is 35x; the probe's is 11x.
+
+INFERRED causes, in order of likely size:
+1. Hardware, not mechanism. `--cpus=0.5` reproduces Fargate's CFS quota exactly, but half a core
+   of an i9-9880H is far more compute than half a shared Fargate vCPU.
+2. Thread spread. The container still reports all 16 host cores (VERIFIED: the probe prints
+   `cpu_count=16` under `--cpus=2`), so BLAS and rayon spread the quota across many threads. A
+   Fargate micro-VM reports its small real core count.
+3. Possibly a different code path entirely — see the open question below.
+
+OPEN QUESTION, and it decides whether this is expected or a regression: which fastumap version
+produced 7.6/28/83/270? If that run predates 0.2.1 it used the numpy SGD fallback, and comparing
+it against a kernel-enabled probe compares two different implementations. Needs Jorge.
+
+Also measured for the first time: clustering under a cap. At 0.5 vCPU, n=5000x1024, `cluster`
+takes 20.7 s against `fit`'s 33.2 s — about two-thirds the cost of a full projection, not the
+rounding error it is usually assumed to be.

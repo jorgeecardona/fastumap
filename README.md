@@ -290,9 +290,11 @@ Each is enforced by a test:
 <!-- --8<-- [start:development] -->
 
 ```bash
-make check     # lint, type-check, and tests
-make tox       # the suite across Python 3.11, 3.12, and 3.13
-make fargate   # import and fit timing under a constrained CPU cap (docker --cpus=0.5 --memory=2g)
+make check        # lint, type-check, and tests
+make tox          # the suite across Python 3.11, 3.12, and 3.13
+make bench-report # regenerate the quality + speed tables into a dated docs/bench/ report
+make fargate      # import and fit timing under one CPU cap (docker --cpus=0.5 --memory=2g)
+make constrained  # fit AND cluster timing under 0.5, 1 and 2 vCPU, into a dated report
 ```
 
 <!-- --8<-- [end:development] -->

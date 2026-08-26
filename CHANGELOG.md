@@ -5,6 +5,23 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.16] - 2026-08-26
+
+### Added
+- **`make constrained`** (`bench/constrained.sh` + `bench/constrained.py`) — a reproducible
+  constrained-vCPU probe. Runs `umap_project` *and* `cluster` at several n under
+  `docker --cpus=0.5`, `1` and `2` (a CFS quota, the same mechanism AWS Fargate's cgroup uses to
+  meter CPU) and writes a dated table to `docs/bench/`. It installs a wheel built from the working
+  tree rather than `pip install .`, so the container needs no Rust toolchain and what is measured
+  is the artifact PyPI ships. Every run compares its own 0.5-vCPU fit times against the observed
+  production Fargate numbers, so drift shows up as a row moving away from them.
+
+  MEASURED, and it does **not** match production in absolute terms: at 0.5 vCPU this probe fits
+  n=250/500/1000/5000 in 3.5/2.8/5.6/33.2 s against Fargate's observed 7.6/28/83/270 s. A local cap
+  reproduces Fargate's mechanism but not its hardware — half a core of a workstation CPU is far
+  more compute than half a shared Fargate vCPU, and the container still sees every host core. The
+  probe's value is drift on a fixed host, not absolute parity; the report says so.
+
 ## [0.2.15] - 2026-08-26
 
 ### Added

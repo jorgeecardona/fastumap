@@ -1,4 +1,4 @@
-.PHONY: sync lint format typecheck test check build grade bench bench-report tox fargate install-hooks
+.PHONY: sync lint format typecheck test check build grade bench bench-report tox fargate constrained install-hooks
 
 sync:
 	uv sync
@@ -41,6 +41,11 @@ tox:
 # Run under a Fargate-like CPU/memory cap (needs Docker): import + fit timing on 0.5 vCPU.
 fargate:
 	sh bench/fargate.sh
+
+# Fargate-shaped probe, but the full curve: fit AND cluster wall-clock at several n under 0.5, 1
+# and 2 vCPU, into a dated table. Needs Docker and a wheel in dist/ (`make build`). Slow (~15 min).
+constrained:
+	sh bench/constrained.sh
 
 bump:
 	sh scripts/bump-version $(TYPE)
