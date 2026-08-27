@@ -204,6 +204,12 @@ class UMAPModel:
                 ),
             )
 
+    def transform(self, matrix: FloatArray) -> FloatArray:
+        """Place new points into this fitted layout without refitting, in the same space (so the
+        same input lands in the same place across scope changes). A method over the module-level
+        :func:`transform`; identical result. ``matrix`` is ``(n_new, n_features)``."""
+        return transform(self, matrix)
+
 
 @with_blas_limit
 def fit(
@@ -318,6 +324,56 @@ def fit(
     )
 
 
+@overload
+def umap_project(
+    matrix: FloatArray,
+    dimensions: int = ...,
+    *,
+    n_neighbors: int = ...,
+    min_dist: float = ...,
+    spread: float = ...,
+    n_epochs: int | None = ...,
+    negative_sample_rate: int = ...,
+    random_state: int = ...,
+    metric: str = ...,
+    chunk_count: int = ...,
+    pca_dim: int | None = ...,
+    knn: str = ...,
+    precomputed_knn: tuple[IntArray, FloatArray] | None = ...,
+    init: FloatArray | None = ...,
+    y: IntArray | None = ...,
+    target_weight: float = ...,
+    densmap: bool = ...,
+    dens_lambda: float = ...,
+    dens_frac: float = ...,
+    dens_var_shift: float = ...,
+    return_model: Literal[False] = ...,
+) -> FloatArray: ...
+@overload
+def umap_project(
+    matrix: FloatArray,
+    dimensions: int = ...,
+    *,
+    n_neighbors: int = ...,
+    min_dist: float = ...,
+    spread: float = ...,
+    n_epochs: int | None = ...,
+    negative_sample_rate: int = ...,
+    random_state: int = ...,
+    metric: str = ...,
+    chunk_count: int = ...,
+    pca_dim: int | None = ...,
+    knn: str = ...,
+    precomputed_knn: tuple[IntArray, FloatArray] | None = ...,
+    init: FloatArray | None = ...,
+    y: IntArray | None = ...,
+    target_weight: float = ...,
+    densmap: bool = ...,
+    dens_lambda: float = ...,
+    dens_frac: float = ...,
+    dens_var_shift: float = ...,
+    return_model: Literal[True],
+) -> tuple[FloatArray, UMAPModel]: ...
 def umap_project(
     matrix: FloatArray,
     dimensions: int = 2,
@@ -338,7 +394,10 @@ def umap_project(
     target_weight: float = 0.5,
     densmap: bool = False,
     dens_lambda: float = 2.0,
-) -> FloatArray:
+    dens_frac: float = 0.3,
+    dens_var_shift: float = 0.1,
+    return_model: bool = False,
+) -> FloatArray | tuple[FloatArray, UMAPModel]:
     """Project ``matrix`` (n_samples, n_features) into ``dimensions`` output dims.
 
     Use 2 or 3 for a picture. Use a mid dimension (~10) when the goal is to *cluster* the
@@ -354,10 +413,16 @@ def umap_project(
 
     ``densmap=True`` turns on densMAP: it keeps dense regions dense and sparse regions sparse,
     instead of UMAP's usual flattening of local density. ``dens_lambda`` (default 2.0) is the
-    strength. It runs on the numpy path (the native kernel does plain UMAP), so it is slower.
-    See the README.
+    strength; ``dens_frac`` and ``dens_var_shift`` tune it as in :func:`fit`. It runs on the numpy
+    path (the native kernel does plain UMAP), so it is slower. See the README.
+
+    ``return_model=True`` returns ``(embedding, model)`` instead of just the coordinates, so a fit
+    can be pinned and reused: call ``model.transform(new_points)`` (or the module-level
+    :func:`transform`) to place later points into the *same* layout. That is what keeps a scatter
+    stable across a scope change: the same points land in the same places instead of the axes
+    being reshuffled by a refit. The model also serialises with :meth:`UMAPModel.to_npz`.
     """
-    return fit(
+    model = fit(
         matrix,
         dimensions,
         n_neighbors=n_neighbors,
@@ -376,7 +441,10 @@ def umap_project(
         target_weight=target_weight,
         densmap=densmap,
         dens_lambda=dens_lambda,
-    ).embedding
+        dens_frac=dens_frac,
+        dens_var_shift=dens_var_shift,
+    )
+    return (model.embedding, model) if return_model else model.embedding
 
 
 @overload

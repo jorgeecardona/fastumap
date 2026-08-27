@@ -200,6 +200,38 @@ def test_choose_k_rejects_bad_n_jobs() -> None:
         choose_k(x, n_jobs=0)
 
 
+def test_assign_clusters_return_distances() -> None:
+    x, _ = _blobs(n=600, d=10, k=4)
+    res = cluster(x, method="kmeans", n_clusters=4, random_state=0, return_centroids=True)
+    labels, distances = assign_clusters(x, res.centroids, return_distances=True)
+    assert labels.shape == (600,)
+    assert distances.shape == (600,)
+    assert (distances >= 0.0).all()
+    # labels must match the plain (distance-free) call
+    assert np.array_equal(labels, assign_clusters(x, res.centroids))
+
+
+def test_assign_clusters_max_distance_marks_noise() -> None:
+    x, _ = _blobs(n=600, d=10, k=4)
+    res = cluster(x, method="kmeans", n_clusters=4, random_state=0, return_centroids=True)
+    # points very far from every centroid become -1; in-distribution points keep a real label.
+    far = np.full((3, 10), 1e6)
+    both = np.concatenate([x[:5], far])
+    labels, distances = assign_clusters(
+        both, res.centroids, max_distance=100.0, return_distances=True
+    )
+    assert (labels[:5] >= 0).all()  # the real points keep their cluster
+    assert (labels[5:] == -1).all()  # the far points are noise
+    assert (distances[5:] > 100.0).all()  # raw distance still reported for the -1 rows
+
+
+def test_assign_clusters_rejects_bad_max_distance() -> None:
+    x, _ = _blobs(n=100, d=8, k=3)
+    res = cluster(x, method="kmeans", n_clusters=3, random_state=0, return_centroids=True)
+    with pytest.raises(ValueError, match="max_distance"):
+        assign_clusters(x, res.centroids, max_distance=-1.0)
+
+
 def test_public_surface_is_importable() -> None:
     # every name in __all__ must resolve through the lazy __getattr__ (guards the kmeans export).
     import fastumap

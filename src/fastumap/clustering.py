@@ -236,10 +236,33 @@ def cluster(
     return labels
 
 
+@overload
+def assign_clusters(
+    embeddings: FloatArray,
+    centroids: FloatArray,
+    *,
+    metric: str = ...,
+    max_distance: float | None = ...,
+    return_distances: Literal[False] = ...,
+) -> IntArray: ...
+@overload
+def assign_clusters(
+    embeddings: FloatArray,
+    centroids: FloatArray,
+    *,
+    metric: str = ...,
+    max_distance: float | None = ...,
+    return_distances: Literal[True],
+) -> tuple[IntArray, FloatArray]: ...
 @with_blas_limit
 def assign_clusters(
-    embeddings: FloatArray, centroids: FloatArray, *, metric: str = "euclidean"
-) -> IntArray:
+    embeddings: FloatArray,
+    centroids: FloatArray,
+    *,
+    metric: str = "euclidean",
+    max_distance: float | None = None,
+    return_distances: bool = False,
+) -> IntArray | tuple[IntArray, FloatArray]:
     """Assign each row of ``embeddings`` to its nearest of ``centroids``. This is the *predict*
     half of a fit/predict split. New points get labels without re-clustering.
 
@@ -247,6 +270,16 @@ def assign_clusters(
     ``metric`` must match the one they were fitted with (``"cosine"`` unit-normalises the rows, as
     fitting did). Uses the same blocked nearest-centroid step as ``cluster``, so peak memory is
     bounded by the block size, no matter how many rows you pass.
+
+    By default a point is always given its nearest centroid, however far that is. To stop far
+    points being absorbed into whatever cluster is least far:
+
+    - ``max_distance`` labels any point whose nearest centroid is beyond it ``-1`` (noise), the
+      same outlier label the density methods use. The distance is in the space the fit ran in
+      (unit-normalised rows for ``"cosine"``), so the threshold is comparable to the ``inertia``
+      per point.
+    - ``return_distances=True`` also returns the distance to the assigned centroid for every row
+      (the raw distance, even for ``-1`` rows), so a caller can pick a threshold from the data.
     """
     x = np.ascontiguousarray(embeddings, dtype=np.float64)
     if x.ndim != 2:
@@ -258,8 +291,16 @@ def assign_clusters(
         raise ValueError(f"embeddings dim {x.shape[1]} != centroids dim {c.shape[1]}")
     if metric not in ("euclidean", "cosine"):
         raise ValueError(f"unknown metric {metric!r}; use 'euclidean' or 'cosine'")
+    if max_distance is not None and max_distance < 0.0:
+        raise ValueError("max_distance must be >= 0")
     work = _unit_rows(x) if metric == "cosine" else x
-    return _assign(work, c)
+    if not return_distances and max_distance is None:
+        return _assign(work, c)  # fast path: argmin only, no per-row distance needed
+    labels, distances = _assign_with_distances(work, c)
+    if max_distance is not None:
+        labels = labels.copy()
+        labels[distances > max_distance] = -1
+    return (labels, distances) if return_distances else labels
 
 
 @with_blas_limit
@@ -720,6 +761,25 @@ def _assign(x: FloatArray, centroids: FloatArray) -> IntArray:
         d2 = c_sq[None, :] - 2.0 * (block @ centroids.T)
         labels[start : start + _BLOCK] = np.argmin(d2, axis=1)
     return labels
+
+
+def _assign_with_distances(x: FloatArray, centroids: FloatArray) -> tuple[IntArray, FloatArray]:
+    """Nearest-centroid label AND the distance to it, per row, one block at a time. Unlike
+    ``_assign`` this keeps the ``||b||^2`` term (it does not affect the argmin, but it is needed for
+    the actual distance a caller can threshold on)."""
+    n = x.shape[0]
+    c_sq = np.einsum("ij,ij->i", centroids, centroids)
+    labels = np.empty(n, dtype=np.int64)
+    nearest_d2 = np.empty(n, dtype=np.float64)
+    for start in range(0, n, _BLOCK):
+        block = x[start : start + _BLOCK]
+        b_sq = np.einsum("ij,ij->i", block, block)
+        d2 = b_sq[:, None] + c_sq[None, :] - 2.0 * (block @ centroids.T)
+        np.maximum(d2, 0.0, out=d2)  # clip negative round-off before the sqrt
+        idx = np.argmin(d2, axis=1)
+        labels[start : start + _BLOCK] = idx
+        nearest_d2[start : start + _BLOCK] = d2[np.arange(idx.shape[0]), idx]
+    return labels, np.sqrt(nearest_d2)
 
 
 def _kmeanspp_init(x: FloatArray, k: int, rng: np.random.Generator) -> FloatArray:

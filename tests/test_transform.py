@@ -67,3 +67,25 @@ def test_transform_single_point() -> None:
     y = transform(model, x[:1])
     assert y.shape == (1, 2)
     assert np.isfinite(y).all()
+
+
+def test_umap_project_return_model() -> None:
+    # return_model=True hands back the model so a fit can be pinned and reused. The convenience
+    # wrapper's embedding must equal fit(...).embedding, and the model must round-trip transform.
+    x, _ = gaussian_clusters(n=200, dim=12, seed=0)
+    emb, model = umap_project(x, 2, random_state=0, return_model=True)
+    assert emb.shape == (200, 2)
+    assert np.array_equal(emb, model.embedding)
+    # UMAPModel.transform is a thin method over the free transform: identical result.
+    new = np.random.default_rng(1).normal(size=(4, 12))
+    assert np.array_equal(model.transform(new), transform(model, new))
+
+
+def test_pinned_model_places_points_stably() -> None:
+    # the point of return_model: transforming the SAME points into a pinned layout is stable,
+    # where a refit would reshuffle the axes and move them.
+    x, _ = gaussian_clusters(n=200, dim=12, seed=0)
+    model = fit(x, 2, random_state=0, n_epochs=100)
+    a = model.transform(x[:20])
+    b = model.transform(x[:20])
+    assert np.array_equal(a, b)

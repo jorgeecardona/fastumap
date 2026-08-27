@@ -5,6 +5,25 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.23] - 2026-08-27
+
+### Added
+- `umap_project(return_model=True)` returns `(embedding, model)` so a fit can be pinned and reused.
+  `UMAPModel.transform(new_points)` places new points into that same layout without refitting (a
+  method over the existing module-level `transform`). This is what keeps a scatter stable across a
+  scope change: the same points land in the same places instead of a refit reshuffling the axes.
+- `assign_clusters` gains `return_distances=True` (also returns the distance to the assigned
+  centroid per row) and `max_distance=...` (points beyond it are labelled `-1` noise instead of
+  being absorbed into the least-far cluster). The distance is measured in the space the fit ran in
+  (unit-normalised rows for cosine).
+- `umap_project` now accepts `dens_frac` and `dens_var_shift`, matching `fit` (they were reachable
+  through `fit` but not through the `umap_project` wrapper).
+
+### Notes
+- Placing new points into pinned k-means centroids (fit once, assign later against the same groups)
+  is already supported by `assign_clusters`, which is metric-aware and raises on a dimension
+  mismatch. No separate `assign` function was added, to keep one name per concept.
+
 ## [0.2.22] - 2026-08-27
 
 ### Added
