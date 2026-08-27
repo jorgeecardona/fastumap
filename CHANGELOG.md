@@ -5,6 +5,16 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.29] - 2026-08-27
+
+### Added
+- `n_init` on `kmeans` and `cluster(method="kmeans")`: restart the fit from that many seeds and
+  keep the lowest-inertia result. This is the remedy for mini-batch k-means settling into a bad
+  optimum on well-separated clusters (measured 4.8x worse inertia than full Lloyd on adversarial
+  blobs); `n_init=5` recovers full-Lloyd parity there. The default stays a single run, because
+  mini-batch is already within ~1% of Lloyd on the overlapping data real embeddings produce and a
+  single run keeps it fast. Deterministic: seeds are `random_state + i`, best chosen by inertia.
+
 ## [0.2.28] - 2026-08-27
 
 ### Added

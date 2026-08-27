@@ -47,21 +47,41 @@ def test_minibatch_matches_lloyd_on_overlapping_data() -> None:
     assert mb <= ll * 1.05
 
 
-def test_minibatch_struggles_on_well_separated_blobs() -> None:
-    """The known weakness, pinned so it is a documented property rather than a surprise.
+def test_minibatch_struggles_on_well_separated_blobs_but_n_init_recovers() -> None:
+    """The known weakness AND its remedy.
 
     On perfectly separated blobs a centroid that drifts into a neighbour's blob can never walk
     back — the running-mean update has no force pulling it across an empty gap, while Lloyd's
     recompute-from-scratch does. MEASURED: 4.8x worse inertia on 20000x32 with 16 blobs 8 sigma
-    apart. Real data does not look like this (MNIST lands at 1.013x), which is why the auto-switch
-    is still on; if this test ever starts passing at parity, the kernel got better, not worse.
+    apart at the default single init. A different seed escapes that optimum, so n_init (keep the
+    lowest-inertia of several restarts) recovers full-Lloyd parity — n_init=5 here. Real data does
+    not look like this (MNIST lands at 1.013x), so the default stays a single fast run.
     """
     x = _blobs()
-    mb_labels, mb_centroids = kmeans(x, 16, batch_size=2000)
     ll_labels, ll_centroids = kmeans(x, 16, batch_size=0)
-    mb, ll = _inertia(x, mb_labels, mb_centroids), _inertia(x, ll_labels, ll_centroids)
-    assert mb > ll  # not a regression test for quality — a record of the gap's existence
+    ll = _inertia(x, ll_labels, ll_centroids)
+
+    # default (single init) still struggles: a record of the gap's existence
+    mb_labels, mb_centroids = kmeans(x, 16, batch_size=2000)
+    assert _inertia(x, mb_labels, mb_centroids) > ll
     assert len(set(mb_labels.tolist())) == 16  # it still fills every cluster
+
+    # n_init is the remedy: restarts from other seeds recover parity with full Lloyd
+    r_labels, r_centroids = kmeans(x, 16, batch_size=2000, n_init=5)
+    assert _inertia(x, r_labels, r_centroids) <= ll * 1.05
+
+
+def test_minibatch_n_init_is_deterministic() -> None:
+    x = _blobs()
+    first = kmeans(x, 16, batch_size=2000, n_init=5, random_state=0)[0]
+    second = kmeans(x, 16, batch_size=2000, n_init=5, random_state=0)[0]
+    assert np.array_equal(first, second)
+
+
+def test_minibatch_rejects_bad_n_init() -> None:
+    x = _blobs(n=2000)
+    with pytest.raises(ValueError, match="n_init must be >= 1"):
+        kmeans(x, 16, batch_size=500, n_init=0)
 
 
 def test_minibatch_is_deterministic_across_calls() -> None:

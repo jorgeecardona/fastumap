@@ -46,3 +46,23 @@ the auto-switch above 200k rows is on and why this is a follow-up rather than a 
 Done when: on the well-separated fixture above, mini-batch inertia is within ~5% of full Lloyd,
 the MNIST and SIFT1M ratios have not regressed, and
 test_minibatch_struggles_on_well_separated_blobs is replaced by a parity assertion.
+
+## Update 2026-08-27 (v0.2.29) — remedy landed as `n_init`; default unchanged, so NOT fully done
+
+Fix #1 from above (n_init) is implemented on `kmeans` and `cluster(method="kmeans")`: restart from
+`n_init` seeds, keep the lowest inertia. MEASURED on the fixture: n_init sweep 1→4.78x, 3→3.08x,
+5→1.00x. So **n_init=5 recovers full-Lloyd parity** — a different seed escapes the bad optimum.
+
+Fix #2 (reassignment) was reconsidered and NOT used: the failure has no empty centroids to reassign
+(the two-in-one-blob centroids are moderately populated, 588/653), so a low-count reassignment rule
+would not trigger here.
+
+The test is updated: `test_minibatch_struggles_on_well_separated_blobs_but_n_init_recovers` asserts
+both the default single-run gap AND that n_init=5 reaches parity.
+
+STILL OPEN, because the "Done when" above asks for the DEFAULT to be within ~5%, and it is not: the
+default stays a single run on purpose. Making n_init=5 the default would fix the adversarial case
+but multiply mini-batch runtime by 5x on EVERY call, including the common case (real embeddings are
+already ~1.01x, so they would pay 5x for no gain, and mini-batch exists to be fast on constrained
+CPU). The decision — keep the fast opt-in default, or change the default and revise "Done when" — is
+Jorge's. MNIST/SIFT1M ratios are unchanged (default path untouched).

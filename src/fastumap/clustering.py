@@ -140,9 +140,7 @@ def _dispersion_and_sizes(
         diff = x[start : start + _BLOCK] - centroids[lbl]
         dist = np.sqrt(np.einsum("ij,ij->i", diff, diff))
         dist_sums += np.bincount(lbl, weights=dist, minlength=k)
-    dispersion = np.divide(
-        dist_sums, sizes, out=np.zeros(k, dtype=np.float64), where=sizes > 0
-    )
+    dispersion = np.divide(dist_sums, sizes, out=np.zeros(k, dtype=np.float64), where=sizes > 0)
     return dispersion, sizes
 
 
@@ -155,6 +153,7 @@ def cluster(
     n_neighbors: int | None = ...,
     metric: str = ...,
     n_iter: int = ...,
+    n_init: int | None = ...,
     random_state: int = ...,
     eps: float | None = ...,
     min_samples: int | None = ...,
@@ -170,6 +169,7 @@ def cluster(
     n_neighbors: int | None = ...,
     metric: str = ...,
     n_iter: int = ...,
+    n_init: int | None = ...,
     random_state: int = ...,
     eps: float | None = ...,
     min_samples: int | None = ...,
@@ -185,6 +185,7 @@ def cluster(
     n_neighbors: int | None = None,
     metric: str = "euclidean",
     n_iter: int = 50,
+    n_init: int | None = None,
     random_state: int = 42,
     eps: float | None = None,
     min_samples: int | None = None,
@@ -205,6 +206,11 @@ def cluster(
 
     ``metric`` is ``"euclidean"`` or ``"cosine"`` (cosine unit-normalises the rows). Deterministic
     given ``random_state``. Does NOT compute a layout. For a picture, call ``umap_project``.
+
+    ``n_init`` (``"kmeans"`` only) restarts the fit from that many seeds and keeps the lowest
+    inertia. The default single run is fine on the overlapping data real embeddings produce; raise
+    it (``n_init=5``) if your data is well-separated, where mini-batch can otherwise settle into a
+    worse optimum.
 
     With ``return_centroids=True`` the return is a :class:`ClusterResult` (labels, centroids,
     inertia) instead of just labels (``"kmeans"`` / ``"spectral"`` only).
@@ -246,7 +252,9 @@ def cluster(
         # space on it; it passes an explicit k back into cluster, so this does not recurse forever.
         n_clusters = choose_k(work, metric="euclidean", n_iter=n_iter, random_state=random_state)
     if method == "kmeans":
-        labels, centroids = kmeans(work, n_clusters, n_iter=n_iter, random_state=random_state)
+        labels, centroids = kmeans(
+            work, n_clusters, n_iter=n_iter, n_init=n_init, random_state=random_state
+        )
     elif method == "spectral":
         # spectral's own default kNN size is 15; None means "use it".
         labels = _spectral(
@@ -853,6 +861,7 @@ def kmeans(
     n_iter: int = 50,
     random_state: int = 42,
     batch_size: int | None = None,
+    n_init: int | None = None,
 ) -> tuple[IntArray, FloatArray]:
     """Lloyd's k-means with k-means++ init. Returns ``(labels, centroids)``.
 
@@ -872,9 +881,20 @@ def kmeans(
     - a positive int — force mini-batch with that batch size.
 
     Mini-batch needs the native kernel; without it the numpy path runs full Lloyd regardless.
+
+    ``n_init`` restarts the fit from that many seeds and keeps the lowest-inertia result. ``None``
+    (default) is a single run. Mini-batch can settle into a bad optimum on well-separated clusters
+    (4.8x worse inertia than full Lloyd on adversarial blobs); it is fine on the overlapping data
+    real embeddings produce (~1.01x), so the default stays a single fast run. If your data is
+    well-separated, pass ``n_init=5`` to recover full-Lloyd parity. Runtime scales with ``n_init``.
     """
     return _kmeans_core(
-        x, n_clusters, n_iter=n_iter, random_state=random_state, batch_size=batch_size
+        x,
+        n_clusters,
+        n_iter=n_iter,
+        random_state=random_state,
+        batch_size=batch_size,
+        n_init=n_init,
     )
 
 
@@ -885,10 +905,49 @@ def _kmeans_core(
     n_iter: int = 50,
     random_state: int = 42,
     batch_size: int | None = None,
+    n_init: int | None = None,
 ) -> tuple[IntArray, FloatArray]:
     """k-means without the BLAS-cap decorator, so it can be called concurrently (e.g. from
     choose_k's parallel sweep) under a cap the caller has already set, with no nested and
-    thread-unsafe re-entry into ``threadpool_limits``."""
+    thread-unsafe re-entry into ``threadpool_limits``.
+
+    ``n_init`` runs the fit that many times from different seeds and keeps the lowest-inertia
+    result. ``None`` (default) is a single run: fast, and enough for full Lloyd and for mini-batch
+    on the overlapping data real embeddings produce. Raise it for the mini-batch path on
+    well-separated clusters, where its running-mean update can settle into a bad optimum a different
+    seed escapes (n_init=5 recovers full-Lloyd parity on the adversarial blobs). Deterministic: the
+    seeds are ``random_state + i`` and the best is chosen by inertia."""
+    if n_clusters < 1:
+        raise ValueError("n_clusters must be >= 1")
+    if n_init is not None and n_init < 1:
+        raise ValueError("n_init must be >= 1")
+    inits = 1 if n_init is None else n_init
+    if inits == 1:
+        return _kmeans_single(
+            x, n_clusters, n_iter=n_iter, random_state=random_state, batch_size=batch_size
+        )
+    best: tuple[IntArray, FloatArray] | None = None
+    best_inertia = float("inf")
+    for i in range(inits):
+        labels, centroids = _kmeans_single(
+            x, n_clusters, n_iter=n_iter, random_state=random_state + i, batch_size=batch_size
+        )
+        val = _inertia(x, labels, centroids)
+        if val < best_inertia:
+            best_inertia, best = val, (labels, centroids)
+    assert best is not None
+    return best
+
+
+def _kmeans_single(
+    x: FloatArray,
+    n_clusters: int,
+    *,
+    n_iter: int = 50,
+    random_state: int = 42,
+    batch_size: int | None = None,
+) -> tuple[IntArray, FloatArray]:
+    """One k-means fit (mini-batch, native full Lloyd, or numpy full Lloyd by size and build)."""
     if n_clusters < 1:
         raise ValueError("n_clusters must be >= 1")
     if n_clusters > x.shape[0]:
