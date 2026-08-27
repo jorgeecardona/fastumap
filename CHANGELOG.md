@@ -5,6 +5,18 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.21] - 2026-08-27
+
+### Changed
+- Internal cleanups only; no public behavior change. Deduplicated three copies of the union-find
+  root lookup (dbscan, the mutual-reachability MST, single linkage) into one `_uf_find`, the two
+  copies of the repulsion-gradient SGD block (`optimize_layout`, `optimize_transform`) into one
+  `_repel_grad`, and the two identical `_unit_rows` (neighbors, clustering) into a shared
+  `_types.unit_rows`. Removed the `local_connectivity` parameter from `smooth_knn_dist` and
+  `fuzzy_simplicial_set`: it was threaded through but discarded, and only the UMAP default (1.0)
+  is implemented.
+- `pyproject.toml` now lists the Issues tracker and Documentation site under `project.urls`.
+
 ## [0.2.20] - 2026-08-27
 
 ### Fixed

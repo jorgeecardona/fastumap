@@ -36,6 +36,7 @@ import numpy as np
 
 from ._threads import with_blas_limit
 from ._types import FloatArray, IntArray
+from ._types import unit_rows as _unit_rows
 
 _BLOCK = 4096  # rows per block in the assignment step; bounds peak memory to block-by-k
 _ACCEL_MIN = 50_000  # below this the numpy path is fast and deterministic; above, use the accel
@@ -61,11 +62,6 @@ try:
     _accel_minibatch = importlib.import_module("fastumap._accel").minibatch_kmeans
 except (ImportError, AttributeError):
     _accel_minibatch = None
-
-
-def _unit_rows(x: FloatArray) -> FloatArray:
-    norms = np.sqrt(np.einsum("ij,ij->i", x, x))
-    return x / np.where(norms > 0.0, norms, 1.0)[:, None]
 
 
 @dataclass(frozen=True)
@@ -284,6 +280,15 @@ def dbscan(
     return _dbscan(indices, dists, float(eps), min_samples)
 
 
+def _uf_find(parent: list[int], a: int) -> int:
+    """Union-find root of ``a`` with path halving; ``parent`` is mutated in place. Shared by dbscan,
+    the mutual-reachability MST, and single linkage, which otherwise each reimplemented it."""
+    while parent[a] != a:
+        parent[a] = parent[parent[a]]
+        a = parent[a]
+    return a
+
+
 def _dbscan(indices: IntArray, dists: FloatArray, eps: float, min_samples: int) -> IntArray:
     """DBSCAN over a precomputed kNN. Core points are unioned to their eps-neighbours; borders take
     a neighbouring core's label; the rest are noise (-1)."""
@@ -291,16 +296,10 @@ def _dbscan(indices: IntArray, dists: FloatArray, eps: float, min_samples: int) 
     within = dists <= eps  # (n, k); column 0 is self at distance 0, so always within
     core = within.sum(axis=1) >= min_samples  # (n,) bool
 
-    parent = np.arange(n, dtype=np.int64)
-
-    def find(a: int) -> int:
-        while int(parent[a]) != a:
-            parent[a] = parent[int(parent[a])]  # path halving
-            a = int(parent[a])
-        return a
+    parent = list(range(n))
 
     def union(a: int, b: int) -> None:
-        ra, rb = find(a), find(b)
+        ra, rb = _uf_find(parent, a), _uf_find(parent, b)
         if ra != rb:
             parent[max(ra, rb)] = min(ra, rb)
 
@@ -318,7 +317,7 @@ def _dbscan(indices: IntArray, dists: FloatArray, eps: float, min_samples: int) 
     labels = np.full(n, -1, dtype=np.int64)
     remap: dict[int, int] = {}
     for i in core_points:
-        root = find(int(i))
+        root = _uf_find(parent, int(i))
         if root not in remap:
             remap[root] = len(remap)
         labels[int(i)] = remap[root]
@@ -426,15 +425,9 @@ def _mutual_reachability_mst(
 
     parent = list(range(n))
 
-    def find(a: int) -> int:
-        while parent[a] != a:
-            parent[a] = parent[parent[a]]  # path halving
-            a = parent[a]
-        return a
-
     mst: list[tuple[float, int, int]] = []
     for pos in range(len(ws)):
-        ra, rb = find(as_[pos]), find(bs[pos])
+        ra, rb = _uf_find(parent, as_[pos]), _uf_find(parent, bs[pos])
         if ra == rb:
             continue
         parent[rb] = ra
@@ -442,9 +435,9 @@ def _mutual_reachability_mst(
         if len(mst) == n - 1:
             break
     if len(mst) < n - 1:  # disconnected kNN graph: bridge the components at infinite distance
-        roots = [i for i in range(n) if find(i) == i]
+        roots = [i for i in range(n) if _uf_find(parent, i) == i]
         for other in roots[1:]:
-            parent[find(other)] = find(roots[0])
+            parent[_uf_find(parent, other)] = _uf_find(parent, roots[0])
             mst.append((float("inf"), roots[0], other))
     return mst
 
@@ -461,14 +454,8 @@ def _single_linkage(
     right = [0] * (n - 1)
     height = [0.0] * (n - 1)
 
-    def find(a: int) -> int:
-        while parent[a] != a:
-            parent[a] = parent[parent[a]]
-            a = parent[a]
-        return a
-
     for j, (w, a, b) in enumerate(mst):
-        ra, rb = find(a), find(b)
+        ra, rb = _uf_find(parent, a), _uf_find(parent, b)
         na, nb = node_of[ra], node_of[rb]
         node = n + j
         left[j], right[j], height[j] = na, nb, w

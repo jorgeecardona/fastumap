@@ -40,7 +40,6 @@ def smooth_knn_dist(
     k: int,
     *,
     n_iter: int = 64,
-    local_connectivity: float = 1.0,
     bandwidth: float = 1.0,
 ) -> tuple[FloatArray, FloatArray]:
     """Per-point ``(sigma, rho)``.
@@ -51,10 +50,9 @@ def smooth_knn_dist(
     ``sigma_i`` is binary-searched so ``sum_j exp(-(d_ij - rho_i)/sigma_i) = log2(k)``, then
     floored at ``MIN_K_DIST_SCALE`` times the local mean distance.
 
-    Only ``local_connectivity == 1.0`` (the UMAP default) is matched exactly. The argument is
-    accepted for signature parity.
+    Fixed at UMAP's ``local_connectivity == 1.0`` (the nearest positive-distance neighbour is the
+    one kept at full weight); the parameter is not exposed because no other value is implemented.
     """
-    _ = local_connectivity
     n = knn_dists.shape[0]
     target = np.log2(k) * bandwidth
     mean_distance = float(knn_dists.mean())
@@ -133,11 +131,10 @@ def fuzzy_simplicial_set(
     knn_dists: FloatArray,
     *,
     set_op_mix_ratio: float = 1.0,
-    local_connectivity: float = 1.0,
 ) -> FuzzyGraph:
     """Full fuzzy simplicial set from a kNN graph, symmetrised by fuzzy union."""
     n, k = knn_indices.shape
-    sigma, rho = smooth_knn_dist(knn_dists, k, local_connectivity=local_connectivity)
+    sigma, rho = smooth_knn_dist(knn_dists, k)
     rows, cols, data = compute_membership(knn_indices, knn_dists, sigma, rho)
     head, tail, weight = _scipy.fuzzy_union(rows, cols, data, n, set_op_mix_ratio)
     return FuzzyGraph(n=n, head=head, tail=tail, weight=weight)

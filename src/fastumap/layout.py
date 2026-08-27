@@ -77,6 +77,39 @@ def _scatter_add(target: FloatArray, idx: IntArray, values: FloatArray) -> None:
         target[:, d] += np.bincount(idx, weights=values[:, d], minlength=n)
 
 
+def _repel_grad(
+    self_pos: FloatArray,
+    neg_pos: FloatArray,
+    *,
+    a: float,
+    b: float,
+    gamma: float,
+    alpha: float,
+) -> FloatArray:
+    """Repulsion gradient of one negative-sample draw: push ``self_pos`` away from ``neg_pos``.
+
+    Shared by optimize_layout and optimize_transform, which drew negatives from different arrays
+    (the moving embedding vs the frozen training layout) but computed this gradient identically.
+    A zero-distance pair (coincident points) gets the ``_GRAD_CLIP`` default push, matching umap's
+    handling. The caller applies any self-repulsion mask, since only optimize_layout can sample a
+    point against itself.
+    """
+    diff_n = self_pos - neg_pos
+    d2n: FloatArray = np.einsum("ij,ij->i", diff_n, diff_n)
+    repel_coeff = np.zeros_like(d2n)
+    positive = d2n > 0.0
+    d2p = d2n[positive]
+    repel_coeff[positive] = (2.0 * gamma * b) / ((0.001 + d2p) * (1.0 + a * np.power(d2p, b)))
+    return (
+        np.where(
+            positive[:, None],
+            np.clip(repel_coeff[:, None] * diff_n, -_GRAD_CLIP, _GRAD_CLIP),
+            _GRAD_CLIP,
+        )
+        * alpha
+    )
+
+
 def spectral_layout(graph: FuzzyGraph, dim: int, *, rng: np.random.Generator) -> FloatArray:
     """Spectral initialisation, rescaled to max|coord|=10 with tiny Gaussian noise."""
     n_components, labels = _scipy.connected_components(graph.n, graph.head, graph.tail)
@@ -276,22 +309,7 @@ def optimize_layout(
             0, n_vertices, size=(negative_sample_rate, edge_idx.shape[0])
         )
         for k_samp in samples:
-            diff_n = pos_h - positions[k_samp]
-            d2n: FloatArray = np.einsum("ij,ij->i", diff_n, diff_n)
-            repel_coeff = np.zeros_like(d2n)
-            positive = d2n > 0.0
-            d2p = d2n[positive]
-            repel_coeff[positive] = (2.0 * gamma * b) / (
-                (0.001 + d2p) * (1.0 + a * np.power(d2p, b))
-            )
-            grad_n = (
-                np.where(
-                    positive[:, None],
-                    np.clip(repel_coeff[:, None] * diff_n, -_GRAD_CLIP, _GRAD_CLIP),
-                    _GRAD_CLIP,
-                )
-                * alpha
-            )
+            grad_n = _repel_grad(pos_h, positions[k_samp], a=a, b=b, gamma=gamma, alpha=alpha)
             grad_n[k_samp == h] = 0.0  # a vertex never repels itself (umap `continue`)
             _scatter_add(delta, h, grad_n)
 
@@ -403,22 +421,7 @@ def optimize_transform(
         # (rate, m) buffer in the same stream order, so the samples are bit-identical.
         samples: IntArray = rng.integers(0, n_ref, size=(negative_sample_rate, due.shape[0]))
         for k_samp in samples:
-            diff_n = emb_h - ref[k_samp]
-            d2n: FloatArray = np.einsum("ij,ij->i", diff_n, diff_n)
-            repel_coeff = np.zeros_like(d2n)
-            positive = d2n > 0.0
-            d2p = d2n[positive]
-            repel_coeff[positive] = (2.0 * gamma * b) / (
-                (0.001 + d2p) * (1.0 + a * np.power(d2p, b))
-            )
-            grad_n = (
-                np.where(
-                    positive[:, None],
-                    np.clip(repel_coeff[:, None] * diff_n, -_GRAD_CLIP, _GRAD_CLIP),
-                    _GRAD_CLIP,
-                )
-                * alpha
-            )
+            grad_n = _repel_grad(emb_h, ref[k_samp], a=a, b=b, gamma=gamma, alpha=alpha)
             _scatter_add(delta, h, grad_n)
 
         emb = emb + delta

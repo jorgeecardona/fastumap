@@ -20,6 +20,7 @@ from collections.abc import Callable
 import numpy as np
 
 from ._types import FloatArray, IntArray
+from ._types import unit_rows as _unit_rows
 
 # Below this many points the exact blocked kNN is still fast (and bit-identical), so `knn="auto"`
 # keeps it. Above it the O(n^2) kNN dominates and approximate wins clearly (measured ~2.4x at
@@ -69,11 +70,6 @@ def _euclidean_tile(
         return d2
 
     return tile
-
-
-def _unit_rows(matrix: FloatArray) -> FloatArray:
-    norms = np.sqrt(np.einsum("ij,ij->i", matrix, matrix))
-    return matrix / np.where(norms > 0.0, norms, 1.0)[:, None]
 
 
 def knn_euclidean(
