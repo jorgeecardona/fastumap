@@ -5,6 +5,20 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.28] - 2026-08-27
+
+### Added
+- `ClusterResult` (from `cluster(..., return_centroids=True)`) now carries `dispersion` and `sizes`
+  (both length `n_clusters`, indexed by label). `dispersion[c]` is the mean distance of cluster
+  `c`'s points to centroid `c`, in the fit's own metric; `sizes[c]` is its point count. Where
+  `inertia` is one number for the whole fit, `dispersion` describes each cluster on its own, so a
+  caller can tell a diffuse cluster (worth splitting) from a tight one of the same size, which is
+  the decision recursive clustering makes at every level.
+
+### Notes
+- Returning the distance to the assigned centroid from `assign_clusters` (asked again in a new
+  issue) already shipped in 0.2.23 as `assign_clusters(..., return_distances=True)`.
+
 ## [0.2.27] - 2026-08-27
 
 ### Changed

@@ -72,15 +72,25 @@ except (ImportError, AttributeError):
 class ClusterResult:
     """What ``cluster(..., return_centroids=True)`` returns.
 
-    ``centroids`` and ``inertia`` are in the space the clustering ran in: the input space, or
-    unit-normalised rows for ``metric="cosine"``. ``inertia`` is the k-means objective, the sum of
-    squared distances from each point to its assigned centroid. Lower is tighter. It is the number
-    to compare across ``n_clusters`` when picking k.
+    ``centroids``, ``inertia`` and ``dispersion`` are in the space the clustering ran in: the input
+    space, or unit-normalised rows for ``metric="cosine"``. ``inertia`` is the k-means objective,
+    the sum of squared distances from each point to its assigned centroid. Lower is tighter. It is
+    the number to compare across ``n_clusters`` when picking k.
+
+    ``dispersion[c]`` is the mean distance of cluster ``c``'s points to centroid ``c``, and
+    ``sizes[c]`` is how many points it has (both length ``n_clusters``, indexed by label). Where
+    ``inertia`` is one number for the whole fit, ``dispersion`` describes each cluster on its own:
+    a diffuse cluster and a tight one of the same size look identical by size and total inertia, but
+    differ in dispersion, which is what tells a caller which clusters hold real structure worth
+    splitting. Computed in the fit's own metric, so a cosine fit is not silently measured in
+    euclidean.
     """
 
     labels: IntArray
     centroids: FloatArray
     inertia: float
+    dispersion: FloatArray
+    sizes: IntArray
 
 
 @dataclass(frozen=True)
@@ -115,6 +125,25 @@ def _inertia(x: FloatArray, labels: IntArray, centroids: FloatArray) -> float:
         diff = block - centroids[labels[start : start + _BLOCK]]
         total += float(np.einsum("ij,ij->", diff, diff))
     return total
+
+
+def _dispersion_and_sizes(
+    x: FloatArray, labels: IntArray, centroids: FloatArray, k: int
+) -> tuple[FloatArray, IntArray]:
+    """Per-cluster mean distance to the assigned centroid, and per-cluster point counts. Blocked
+    like ``_inertia`` (the (n, d) difference is never materialised at once). An empty cluster gets
+    dispersion 0.0."""
+    sizes = np.bincount(labels, minlength=k).astype(np.int64)
+    dist_sums = np.zeros(k, dtype=np.float64)
+    for start in range(0, x.shape[0], _BLOCK):
+        lbl = labels[start : start + _BLOCK]
+        diff = x[start : start + _BLOCK] - centroids[lbl]
+        dist = np.sqrt(np.einsum("ij,ij->i", diff, diff))
+        dist_sums += np.bincount(lbl, weights=dist, minlength=k)
+    dispersion = np.divide(
+        dist_sums, sizes, out=np.zeros(k, dtype=np.float64), where=sizes > 0
+    )
+    return dispersion, sizes
 
 
 @overload
@@ -236,7 +265,10 @@ def cluster(
         )
     if return_centroids:
         assert centroids is not None
-        return ClusterResult(labels, centroids, _inertia(work, labels, centroids))
+        dispersion, sizes = _dispersion_and_sizes(work, labels, centroids, n_clusters)
+        return ClusterResult(
+            labels, centroids, _inertia(work, labels, centroids), dispersion, sizes
+        )
     return labels
 
 

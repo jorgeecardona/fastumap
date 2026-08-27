@@ -232,6 +232,21 @@ def test_assign_clusters_rejects_bad_max_distance() -> None:
         assign_clusters(x, res.centroids, max_distance=-1.0)
 
 
+def test_cluster_result_dispersion_and_sizes() -> None:
+    # a diffuse cluster and a tight one of the same size are told apart by dispersion (not by size
+    # or total inertia); sizes sum to n. This is the "should I split this cluster?" signal (#28).
+    rng = np.random.default_rng(0)
+    tight = rng.normal(0.0, 0.2, (200, 8)) + 10.0
+    diffuse = rng.normal(0.0, 3.0, (200, 8)) - 10.0
+    x = np.concatenate([tight, diffuse])
+    r = cluster(x, method="kmeans", n_clusters=2, random_state=0, return_centroids=True)
+    assert r.dispersion.shape == (2,)
+    assert r.sizes.shape == (2,)
+    assert int(r.sizes.sum()) == 400
+    assert (r.dispersion >= 0.0).all()
+    assert r.dispersion.max() > r.dispersion.min() * 2.0  # the diffuse cluster is clearly looser
+
+
 def test_public_surface_is_importable() -> None:
     # every name in __all__ must resolve through the lazy __getattr__ (guards the kmeans export).
     import fastumap
