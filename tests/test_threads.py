@@ -29,7 +29,9 @@ def test_invisible_quota_does_not_cap(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(T, "_cgroup_cpu_quota", lambda: None)
     monkeypatch.setattr(T.os, "cpu_count", lambda: 2)
-    monkeypatch.setattr(T.os, "sched_getaffinity", two_cores)
+    # raising=False: os.sched_getaffinity is Linux-only, so on macOS/Windows the attribute does not
+    # exist to patch. Setting it anyway simulates the Linux affinity call the source guards for.
+    monkeypatch.setattr(T.os, "sched_getaffinity", two_cores, raising=False)
     assert T.blas_thread_limit() is None
 
 

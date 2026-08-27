@@ -63,8 +63,11 @@ def blas_thread_limit() -> int | None:
     """
     host = os.cpu_count() or 1
     limit = host
-    with contextlib.suppress(AttributeError):  # no sched_getaffinity on macOS / Windows
-        limit = min(limit, len(os.sched_getaffinity(0)))  # cpuset restriction (Linux only)
+    # os.sched_getaffinity is Linux-only (absent on macOS / Windows); getattr keeps this both
+    # runtime-safe and type-clean on those platforms.
+    getaffinity = getattr(os, "sched_getaffinity", None)
+    if getaffinity is not None:
+        limit = min(limit, len(getaffinity(0)))  # cpuset restriction (Linux only)
     quota = _cgroup_cpu_quota()
     if quota is not None:
         limit = min(limit, max(1, int(quota)))

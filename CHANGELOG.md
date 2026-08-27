@@ -5,6 +5,14 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.25] - 2026-08-27
+
+### Changed
+- `blas_thread_limit` reads `os.sched_getaffinity` through `getattr` instead of catching the
+  `AttributeError` on macOS/Windows (where the function does not exist). Runtime behavior is
+  unchanged; the module now type-checks clean under pyright strict on those platforms, and the
+  `test_threads` affinity test patches with `raising=False` so it runs there too.
+
 ## [0.2.24] - 2026-08-27
 
 ### Added
