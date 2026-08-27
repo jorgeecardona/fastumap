@@ -1,0 +1,23 @@
+#!/bin/sh
+# Auto-bump the patch version when a commit ships a change to src/ Python, so shipped code never
+# lands without a version bump. This is the local, auto-fixing counterpart to the CI-side
+# scripts/check-version-bump (which only fails the pipeline). Install it with `make install-hooks`
+# (sets core.hooksPath to .githooks). It never bumps for test/doc/CI-only commits.
+set -e
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Only what this commit will actually contain (the staged tree) matters.
+if ! git diff --cached --name-only -- 'src/' | grep -q '\.py$'; then
+    exit 0  # no shipped Python source staged; nothing to bump
+fi
+
+# Already bumping the version in this same commit? Then leave it as the author set it.
+if git diff --cached -- pyproject.toml | grep -qE '^[+-]version = "'; then
+    exit 0
+fi
+
+echo "pre-commit: src/*.py is staged but the version was not bumped; bumping patch."
+sh scripts/bump-version patch
+git add pyproject.toml
+echo "pre-commit: version bumped and staged. Add a CHANGELOG.md entry for it before pushing."

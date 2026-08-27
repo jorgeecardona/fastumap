@@ -24,5 +24,10 @@ case "$BUMP_TYPE" in
 esac
 
 NEW="${MAJOR}.${MINOR}.${PATCH}"
-sed -i -E "s/^version = \"${CURRENT}\"/version = \"${NEW}\"/" pyproject.toml
+# Write through a temp file rather than `sed -i`: GNU takes `-i` with no suffix, but BSD/macOS
+# sed reads the next token as the backup suffix, so `sed -i -E ...` there leaves a stray
+# pyproject.toml-E file. `sed -E > tmp && mv` behaves the same on both.
+TMP=$(mktemp)
+sed -E "s/^version = \"${CURRENT}\"/version = \"${NEW}\"/" pyproject.toml > "$TMP"
+mv "$TMP" pyproject.toml
 echo "bump-version: ${CURRENT} -> ${NEW}"
