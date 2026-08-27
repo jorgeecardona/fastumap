@@ -48,10 +48,13 @@ def test_kmeans_standalone_returns_centroids() -> None:
     assert _purity(y, labels) > 0.95
 
 
-def test_no_n_clusters_raises() -> None:
-    x, _ = _blobs(n=100)
-    with pytest.raises(ValueError, match="n_clusters"):
-        cluster(x, method="kmeans")
+def test_no_n_clusters_picks_k() -> None:
+    # n_clusters=None is the documented default; kmeans/spectral pick k via choose_k rather than
+    # refusing the call (GitLab #23). Five well-separated blobs should recover ~5 clusters.
+    x, _ = _blobs(n=1500, k=5)
+    labels = cluster(x, method="kmeans", random_state=0)
+    assert labels.shape == (1500,)
+    assert 4 <= len(set(labels.tolist())) <= 6
 
 
 def test_bad_method_raises() -> None:
@@ -163,3 +166,12 @@ def test_choose_k_rejects_bad_range() -> None:
     x, _ = _blobs(n=100)
     with pytest.raises(ValueError, match="k_min"):
         choose_k(x, k_min=1, k_max=5)
+
+
+def test_public_surface_is_importable() -> None:
+    # every name in __all__ must resolve through the lazy __getattr__ (guards the kmeans export).
+    import fastumap
+
+    for name in fastumap.__all__:
+        assert getattr(fastumap, name) is not None
+    assert fastumap.kmeans is kmeans

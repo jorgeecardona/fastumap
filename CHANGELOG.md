@@ -5,6 +5,37 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.20] - 2026-08-27
+
+### Fixed
+- `cluster(method="kmeans")` and `cluster(method="spectral")` called with the documented default
+  `n_clusters=None` raised `ValueError` instead of clustering. `None` now means "pick k", resolved
+  by `choose_k` internally.
+- `transform()` raised "need at least 2 points" on a single new point. Placing one point into a
+  fitted layout is well defined (one query per request is a primary serving path); only `fit` and
+  `spectral_project` still require n >= 2.
+- `cluster(n_neighbors=...)` was silently ignored for `method="dbscan"` and `method="hdbscan"`. It
+  is now forwarded. The default is unchanged: `n_neighbors=None` uses each method's own default
+  (30 for the density methods, 15 for spectral), so existing results are stable.
+- densMAP returned an all-NaN embedding on degenerate input (all-duplicate rows, or any perfectly
+  regular graph), because the local-radius z-score divided by a zero standard deviation. A flat
+  radius field is now zero.
+- `neighbor_overlap(a, b, k=0)` raised `ZeroDivisionError`; it now raises a clear `ValueError`.
+- Native k-means was not bit-identical across machines with different core counts. Two parallel
+  f32 reductions were order-sensitive: the k-means++ seed selection (an order-dependent low bit
+  picked a different seed and diverged the whole run) and the centroid means. Both now use a
+  fixed-order f64 accumulation, so labels and centroids are identical whatever the vCPU count. This
+  is the guarantee the "bit-identical across machines" claim needs for CPU-constrained containers
+  with varying vCPU allotments.
+
+### Added
+- BLAS thread capping (`with_blas_limit`) now also wraps every public clustering entry point
+  (`cluster`, `kmeans`, `dbscan`, `hdbscan`, `choose_k`, `assign_clusters`) and `spectral_project`,
+  not just `fit`/`transform`. Clustering is the workload that runs in CPU-constrained containers,
+  so it needs the same cap against BLAS oversubscription.
+- `kmeans` is now exported from the top-level `fastumap` package (it was reachable only via
+  `fastumap.clustering`), so the README examples that use it run as written.
+
 ## [0.2.19] - 2026-08-27
 
 ### Changed

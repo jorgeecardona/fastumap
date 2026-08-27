@@ -154,3 +154,13 @@ def test_hdbscan_rejects_bad_params() -> None:
         hdbscan(x, metric="manhattan")
     with pytest.raises(ValueError, match="embeddings must be 2-D"):
         hdbscan(np.zeros(10, dtype=np.float64))
+
+
+def test_cluster_forwards_explicit_n_neighbors() -> None:
+    # cluster(method="hdbscan") used to drop n_neighbors silently; an explicit value must now
+    # reach hdbscan (the default, n_neighbors=None, still matches the standalone default of 30).
+    x, _ = _blobs(n=400)
+    assert np.array_equal(
+        cluster(x, method="hdbscan", min_cluster_size=15, n_neighbors=10),
+        hdbscan(x, min_cluster_size=15, n_neighbors=10),
+    )

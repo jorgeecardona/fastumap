@@ -20,6 +20,8 @@ def neighbor_overlap(original: FloatArray, projected: FloatArray, k: int) -> flo
     Chance level is about ``k/(n-1)`` — always compare against a random-layout control
     (see :func:`random_layout`).
     """
+    if k < 1:
+        raise ValueError(f"k must be >= 1; got {k}")
     orig = np.ascontiguousarray(original, dtype=np.float64)
     proj = np.ascontiguousarray(projected, dtype=np.float64)
     n = orig.shape[0]

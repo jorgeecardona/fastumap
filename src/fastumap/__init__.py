@@ -26,6 +26,7 @@ __all__ = [
     "fit",
     "global_distance_correlation",
     "hdbscan",
+    "kmeans",
     "neighbor_overlap",
     "random_layout",
     "spectral_project",
@@ -46,6 +47,7 @@ if TYPE_CHECKING:
         cluster,
         dbscan,
         hdbscan,
+        kmeans,
     )
     from .layout import accelerator_active
     from .metrics import global_distance_correlation, neighbor_overlap, random_layout
@@ -77,7 +79,15 @@ def __getattr__(name: str) -> object:
         from . import neighbors
 
         return neighbors.ann_available
-    if name in ("cluster", "ClusterResult", "assign_clusters", "choose_k", "dbscan", "hdbscan"):
+    if name in (
+        "cluster",
+        "ClusterResult",
+        "assign_clusters",
+        "choose_k",
+        "dbscan",
+        "hdbscan",
+        "kmeans",
+    ):
         from . import clustering
 
         return getattr(clustering, name)

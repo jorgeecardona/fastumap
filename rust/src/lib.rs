@@ -199,13 +199,18 @@ fn kmeanspp_seed(x: &[f32], n: usize, dim: usize, k: usize, rng: &mut u64) -> Ve
         .map(|i| dist2(&sx[i * dim..i * dim + dim], &centroids[0..dim]))
         .collect();
     for c in 1..k {
-        let total: f32 = closest.par_iter().sum();
-        let target = (splitmix64(rng) as f64 / u64::MAX as f64) as f32 * total;
+        // Sequential f64 sum, not a parallel f32 reduce: this total feeds a threshold walk that
+        // picks a discrete seed index, so an order-dependent low-order-bit change (which a parallel
+        // f32 reduce produces when the core count changes the reduction tree) would select a
+        // different seed on a different machine and diverge the entire run. A fixed-order f64 sum
+        // is thread-count-independent, and the walk below accumulates in f64 to match it.
+        let total: f64 = closest.iter().map(|&d| d as f64).sum();
+        let target = (splitmix64(rng) as f64 / u64::MAX as f64) * total;
         let mut chosen = sn - 1;
         if total > 0.0 {
-            let mut acc = 0.0f32;
+            let mut acc = 0.0f64;
             for (i, &d2) in closest.iter().enumerate() {
-                acc += d2;
+                acc += d2 as f64;
                 if acc >= target {
                     chosen = i;
                     break;
@@ -317,23 +322,30 @@ fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u
         }
         // Centroid means as a parallel fold-reduce: each thread accumulates its own (sums,
         // counts), then they're merged — avoids a data race on shared centroids.
+        //
+        // Sums accumulate in f64, not f32. The reduction tree's shape depends on the rayon thread
+        // count, and f32 addition is not associative, so an f32 accumulator makes the centroids
+        // (and thus a few labels) differ in low-order bits between machines with different core
+        // counts. Widening the running total to f64 keeps the accumulation error far below the
+        // final f32 rounding, so `(sum/count) as f32` lands on the same bits regardless of how the
+        // partial sums were split — the "bit-identical across machines" guarantee the README makes.
         let (sums, counts) = (0..n)
             .into_par_iter()
             .fold(
-                || (vec![0.0f32; k * dim], vec![0usize; k]),
+                || (vec![0.0f64; k * dim], vec![0usize; k]),
                 |(mut s, mut cnt), i| {
                     let c = labels[i] as usize;
                     cnt[c] += 1;
                     let xi = &x[i * dim..i * dim + dim];
                     let sc = &mut s[c * dim..c * dim + dim];
                     for d in 0..dim {
-                        sc[d] += xi[d];
+                        sc[d] += xi[d] as f64;
                     }
                     (s, cnt)
                 },
             )
             .reduce(
-                || (vec![0.0f32; k * dim], vec![0usize; k]),
+                || (vec![0.0f64; k * dim], vec![0usize; k]),
                 |(mut s1, mut c1), (s2, c2)| {
                     for i in 0..k * dim {
                         s1[i] += s2[i];
@@ -346,9 +358,9 @@ fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u
             );
         for c in 0..k {
             if counts[c] > 0 {
-                let inv = 1.0f32 / counts[c] as f32;
+                let inv = 1.0f64 / counts[c] as f64;
                 for d in 0..dim {
-                    centroids[c * dim + d] = sums[c * dim + d] * inv;
+                    centroids[c * dim + d] = (sums[c * dim + d] * inv) as f32;
                 }
             }
         }

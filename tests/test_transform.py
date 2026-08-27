@@ -57,3 +57,13 @@ def test_transform_feature_mismatch_rejected() -> None:
     wrong = np.random.default_rng(0).normal(size=(10, 16))
     with pytest.raises(ValueError, match="features"):
         transform(model, wrong)
+
+
+def test_transform_single_point() -> None:
+    # placing one new point into a fitted layout is well-defined (one query per request is a
+    # primary serving path); only fit needs the n>=2 floor. Regression for the n=1 crash.
+    x, _ = gaussian_clusters(n=200, dim=12, seed=0)
+    model = fit(x, 2, random_state=0, n_epochs=50)
+    y = transform(model, x[:1])
+    assert y.shape == (1, 2)
+    assert np.isfinite(y).all()

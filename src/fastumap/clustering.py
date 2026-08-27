@@ -34,6 +34,7 @@ from typing import Literal, overload
 
 import numpy as np
 
+from ._threads import with_blas_limit
 from ._types import FloatArray, IntArray
 
 _BLOCK = 4096  # rows per block in the assignment step; bounds peak memory to block-by-k
@@ -99,7 +100,7 @@ def cluster(
     *,
     method: str = ...,
     n_clusters: int | None = ...,
-    n_neighbors: int = ...,
+    n_neighbors: int | None = ...,
     metric: str = ...,
     n_iter: int = ...,
     random_state: int = ...,
@@ -114,7 +115,7 @@ def cluster(
     *,
     method: str = ...,
     n_clusters: int | None = ...,
-    n_neighbors: int = ...,
+    n_neighbors: int | None = ...,
     metric: str = ...,
     n_iter: int = ...,
     random_state: int = ...,
@@ -123,12 +124,13 @@ def cluster(
     min_cluster_size: int = ...,
     return_centroids: Literal[True],
 ) -> ClusterResult: ...
+@with_blas_limit
 def cluster(
     embeddings: FloatArray,
     *,
     method: str = "kmeans",
     n_clusters: int | None = None,
-    n_neighbors: int = 15,
+    n_neighbors: int | None = None,
     metric: str = "euclidean",
     n_iter: int = 50,
     random_state: int = 42,
@@ -167,26 +169,42 @@ def cluster(
                 f"return_centroids is not supported for method={method!r} (noise has no centroid)"
             )
         # work is already metric-normalised, so run the density methods in euclidean space on it.
+        # n_neighbors=None means "use the method's own default" (30 for the density methods), so
+        # an unset call is unchanged; an explicit value is honoured (previously it was dropped).
+        density_neighbors = 30 if n_neighbors is None else n_neighbors
         if method == "dbscan":
             # dbscan's own default; hdbscan's is min_cluster_size, so it takes None straight through.
             return dbscan(
                 work,
                 eps=eps,
                 min_samples=5 if min_samples is None else min_samples,
+                n_neighbors=density_neighbors,
                 metric="euclidean",
             )
         return hdbscan(
             work,
             min_cluster_size=min_cluster_size,
             min_samples=min_samples,
+            n_neighbors=density_neighbors,
             metric="euclidean",
         )
     if n_clusters is None:
-        raise ValueError(f"method={method!r} requires n_clusters")
+        # kmeans/spectral need a k. The documented default (None) means "pick one" via choose_k,
+        # not "refuse the call". work is already metric-normalised, so choose_k runs in euclidean
+        # space on it; it passes an explicit k back into cluster, so this does not recurse forever.
+        n_clusters = choose_k(work, metric="euclidean", n_iter=n_iter, random_state=random_state)
     if method == "kmeans":
         labels, centroids = kmeans(work, n_clusters, n_iter=n_iter, random_state=random_state)
     elif method == "spectral":
-        labels = _spectral(work, n_clusters, n_neighbors, metric, n_iter, random_state)
+        # spectral's own default kNN size is 15; None means "use it".
+        labels = _spectral(
+            work,
+            n_clusters,
+            15 if n_neighbors is None else n_neighbors,
+            metric,
+            n_iter,
+            random_state,
+        )
         # spectral returns labels only; recover input-space centroids from them when asked.
         centroids = _centroids_from_labels(work, labels, n_clusters) if return_centroids else None
     else:
@@ -199,6 +217,7 @@ def cluster(
     return labels
 
 
+@with_blas_limit
 def assign_clusters(
     embeddings: FloatArray, centroids: FloatArray, *, metric: str = "euclidean"
 ) -> IntArray:
@@ -224,6 +243,7 @@ def assign_clusters(
     return _assign(work, c)
 
 
+@with_blas_limit
 def dbscan(
     embeddings: FloatArray,
     *,
@@ -315,6 +335,7 @@ def _dbscan(indices: IntArray, dists: FloatArray, eps: float, min_samples: int) 
     return labels
 
 
+@with_blas_limit
 def hdbscan(
     embeddings: FloatArray,
     *,
@@ -558,6 +579,7 @@ def _labels_from_condensed(rows: list[tuple[int, int, float, int]], n: int) -> I
     return labels
 
 
+@with_blas_limit
 def choose_k(
     embeddings: FloatArray,
     *,
@@ -656,6 +678,7 @@ def _centroids_from_labels(x: FloatArray, labels: IntArray, k: int) -> FloatArra
     return centroids
 
 
+@with_blas_limit
 def kmeans(
     x: FloatArray,
     n_clusters: int,

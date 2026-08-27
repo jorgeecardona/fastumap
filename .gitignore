@@ -47,4 +47,6 @@ src/fastumap/*.so
 # docs/issues/ IS tracked — the register is plain markdown.
 .mcp.json
 .claude/
+# Local-only project instructions; kept out of the public repo.
+CLAUDE.md
 site/          # mkdocs build output

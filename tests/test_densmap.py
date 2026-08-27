@@ -42,3 +42,10 @@ def test_densmap_output_shape_and_determinism() -> None:
     b = umap_project(x, 2, random_state=0, densmap=True)
     assert a.shape == (600, 2)
     assert np.array_equal(a, b)  # numpy densMAP path is deterministic
+
+
+def test_densmap_degenerate_radii_no_nan() -> None:
+    # all-duplicate rows give every vertex the same local radius, so the radius z-score is 0/0.
+    # Guarded to a flat field so the whole embedding does not turn NaN. Regression.
+    emb = umap_project(np.ones((30, 5)), 2, random_state=0, densmap=True)
+    assert np.isfinite(emb).all()

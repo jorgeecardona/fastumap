@@ -29,7 +29,7 @@ def _default_epochs(n: int) -> int:
     return 500 if n <= 10_000 else 200
 
 
-def _validate(matrix: FloatArray, dimensions: int) -> FloatArray:
+def _validate(matrix: FloatArray, dimensions: int, *, min_points: int = 2) -> FloatArray:
     # Sparse input is out of scope (see README "Sparse input"). The blocked kNN relies on
     # dense BLAS matmul, and the target workload is dense encoder/CLS embeddings. Detect a
     # sparse matrix by its `toarray` method. Fail with a clear pointer, rather than the
@@ -48,8 +48,8 @@ def _validate(matrix: FloatArray, dimensions: int) -> FloatArray:
         raise ValueError(
             f"dimensions ({dimensions}) cannot exceed n_features ({x.shape[1]}) — not a reduction"
         )
-    if x.shape[0] < 2:
-        raise ValueError("need at least 2 points to project")
+    if x.shape[0] < min_points:
+        raise ValueError(f"need at least {min_points} point(s) to project")
     return x
 
 
@@ -96,7 +96,10 @@ def _original_radius(work: FloatArray, graph: FuzzyGraph) -> FloatArray:
         graph.tail, weights=mu, minlength=n
     )
     ro = np.log(1e-8 + ro_num / mu_sum)
-    return (ro - ro.mean()) / ro.std()
+    sd = ro.std()
+    # all-equal radii (e.g. all-duplicate rows, a perfectly regular graph) give std 0; the
+    # z-score is then 0/0 = NaN and poisons the whole embedding. A flat radius field is 0.
+    return (ro - ro.mean()) / sd if sd > 0.0 else np.zeros_like(ro)
 
 
 def _pca_reduce(x: FloatArray, pca_dim: int) -> tuple[FloatArray, FloatArray, FloatArray]:
@@ -411,7 +414,9 @@ def transform(
     training set's own mean nearest-neighbour distance. Points landing 2-3x further out are
     extrapolations. A rising batch mean is the signal to refit (see the README).
     """
-    new_x = _validate(matrix, model.dimensions)
+    # placing points into a fixed layout is well-defined for a single point (one query per
+    # request is a primary serving path); only fit/spectral_project need the n>=2 floor.
+    new_x = _validate(matrix, model.dimensions, min_points=1)
     if new_x.shape[1] != model.n_features:
         raise ValueError(
             f"new points have {new_x.shape[1]} features, model was fit on {model.n_features}"
@@ -474,6 +479,7 @@ def _weighted_average_init(
     return init
 
 
+@with_blas_limit
 def spectral_project(
     matrix: FloatArray,
     dimensions: int = 2,

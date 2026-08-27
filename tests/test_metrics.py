@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from fastumap import (
     global_distance_correlation,
     neighbor_overlap,
@@ -30,3 +32,10 @@ def test_identical_layout_full_overlap() -> None:
     x, _ = gaussian_clusters(n=100, dim=16)
     assert neighbor_overlap(x, x[:, :2], 10) >= 0.0  # sanity: no crash, valid range
     assert abs(neighbor_overlap(x, x, 10) - 1.0) < 1e-9  # a copy preserves all neighbours
+
+
+def test_neighbor_overlap_rejects_k_below_one() -> None:
+    # k=0 previously divided by zero; a clear error beats a bare ZeroDivisionError. Regression.
+    x, _ = gaussian_clusters(n=50, dim=8)
+    with pytest.raises(ValueError, match="k must be"):
+        neighbor_overlap(x, x[:, :2], 0)

@@ -116,6 +116,8 @@ iteration rather than sweeping all of them. Measured on SIFT1M inside a `docker 
 container: 5.2 s against full Lloyd's 25.3 s, at 1.010× the inertia.
 
 ```python
+from fastumap import cluster, kmeans
+
 labels = cluster(x, method="kmeans", n_clusters=64)   # mini-batch above 200k rows
 labels, cent = kmeans(x, 64, batch_size=0)            # force full Lloyd at any size
 labels, cent = kmeans(x, 64, batch_size=5000)         # force mini-batch, with an explicit batch
