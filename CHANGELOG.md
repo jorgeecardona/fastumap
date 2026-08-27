@@ -5,6 +5,20 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.26] - 2026-08-27
+
+### Changed
+- The clustering module docstring no longer claims to be "float32-friendly" without qualification.
+  The numpy entry points upcast to float64 (for a deterministic-to-the-byte result and the
+  inertia), so at 1M x 1024 the float64 work array (~8 GB) is the memory driver. The docstring now
+  states this and that the ~10 s-at-1M budget is met by the native kernel, not the numpy fallback.
+
+### Notes
+- Bringing your own (e.g. threaded-faiss or GPU) kNN is already supported by
+  `fit(..., precomputed_knn=(indices, distances))` and the same on `umap_project`, which is the
+  smallest-surface way to get a multi-threaded neighbour search without giving up the library's
+  deterministic default (the built-in approximate backend is pinned to one thread on purpose).
+
 ## [0.2.25] - 2026-08-27
 
 ### Changed

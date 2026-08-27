@@ -21,9 +21,13 @@ Four methods, all ours:
   densities come out together. You give it ``min_cluster_size``. The usual choice after a UMAP
   reduction when you don't know k.
 
-Everything here is float32-friendly and blocked, so it holds to the low-memory / low-CPU
-constraints. The best shape at 1M (iteration count, a compiled k-means kernel) is a tuning
-question to settle against a benchmark.
+Memory: the native kernel runs in float32, but the numpy entry points upcast the input to float64
+(``np.ascontiguousarray(..., dtype=np.float64)``) for a deterministic-to-the-byte result and for
+the inertia. So on any path the float64 work array is the memory driver at large n: a
+1,000,000 x 1024 float32 input becomes an ~8 GB float64 array. The assignment step is blocked, so
+the n-by-k distance matrix on top of that stays bounded by the block size, not by n. At 1M the
+native kernel meets the ~10 s budget; without it (an unbuilt checkout) the numpy fallback is
+minutes, since a numpy inner loop is not the threaded float32 GEMM that budget assumes.
 """
 
 from __future__ import annotations
