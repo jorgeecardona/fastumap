@@ -5,6 +5,19 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.22] - 2026-08-27
+
+### Added
+- `choose_k(return_evidence=True)` returns a `ChooseKResult` (the chosen k, the per-candidate
+  inertias, the sample size actually used, and `n_iter`/`random_state`) instead of the bare
+  integer, so a caller can publish the evidence behind the choice, not just the number. The
+  docstring now names the selection criterion (the inertia elbow) explicitly, distinct from the
+  distance `metric`. `ChooseKResult` is exported from the top-level package.
+- `choose_k(n_jobs=...)` runs the independent per-k fits in parallel. Each fit is pinned to one
+  BLAS thread for the sweep, so `n_jobs` of them run concurrently without oversubscribing, and the
+  result is bit-identical to `n_jobs=1`. On a 17-candidate sweep this turns a sequential ~17-fit
+  cost into roughly `17 / n_jobs`.
+
 ## [0.2.21] - 2026-08-27
 
 ### Changed

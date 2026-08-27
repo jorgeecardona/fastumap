@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 __all__ = [
+    "ChooseKResult",
     "ClusterResult",
     "UMAPModel",
     "__version__",
@@ -41,6 +42,7 @@ if TYPE_CHECKING:
     __version__: str
 
     from .clustering import (
+        ChooseKResult,
         ClusterResult,
         assign_clusters,
         choose_k,
@@ -81,6 +83,7 @@ def __getattr__(name: str) -> object:
         return neighbors.ann_available
     if name in (
         "cluster",
+        "ChooseKResult",
         "ClusterResult",
         "assign_clusters",
         "choose_k",

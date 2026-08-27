@@ -4,7 +4,13 @@ import numpy as np
 import pytest
 
 from fastumap import cluster
-from fastumap.clustering import ClusterResult, assign_clusters, choose_k, kmeans
+from fastumap.clustering import (
+    ChooseKResult,
+    ClusterResult,
+    assign_clusters,
+    choose_k,
+    kmeans,
+)
 
 
 def _blobs(n: int = 1500, d: int = 20, k: int = 5, spread: float = 6.0, seed: int = 0):
@@ -166,6 +172,32 @@ def test_choose_k_rejects_bad_range() -> None:
     x, _ = _blobs(n=100)
     with pytest.raises(ValueError, match="k_min"):
         choose_k(x, k_min=1, k_max=5)
+
+
+def test_choose_k_n_jobs_matches_serial() -> None:
+    # the parallel sweep must give the identical k (each fit is seeded and order-independent).
+    x, _ = _blobs(n=1200, d=12, k=5)
+    serial = choose_k(x, k_min=2, k_max=12, random_state=0, n_jobs=1)
+    parallel = choose_k(x, k_min=2, k_max=12, random_state=0, n_jobs=4)
+    assert serial == parallel
+
+
+def test_choose_k_return_evidence() -> None:
+    x, _ = _blobs(n=1200, d=12, k=5)
+    ev = choose_k(x, k_min=2, k_max=10, random_state=0, return_evidence=True)
+    assert isinstance(ev, ChooseKResult)
+    assert ev.k == choose_k(x, k_min=2, k_max=10, random_state=0)  # same k as the bare call
+    assert ev.candidates == list(range(2, 11))
+    assert len(ev.inertias) == len(ev.candidates)
+    assert ev.criterion == "inertia_elbow"
+    assert ev.n_samples == 1200  # below max_samples, so every point is used
+    assert ev.inertias[0] > ev.inertias[-1]  # inertia falls as k grows
+
+
+def test_choose_k_rejects_bad_n_jobs() -> None:
+    x, _ = _blobs(n=100)
+    with pytest.raises(ValueError, match="n_jobs"):
+        choose_k(x, n_jobs=0)
 
 
 def test_public_surface_is_importable() -> None:

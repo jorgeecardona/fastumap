@@ -79,6 +79,29 @@ class ClusterResult:
     inertia: float
 
 
+@dataclass(frozen=True)
+class ChooseKResult:
+    """What ``choose_k(..., return_evidence=True)`` returns: the chosen ``k`` and the evidence for
+    it, so a caller can publish why a k was picked rather than just the integer.
+
+    - ``candidates`` / ``inertias`` — the k-means objective at each candidate k (parallel lists).
+      The chosen k is the elbow of this curve; a sharp knee is a stronger claim than a flat one.
+    - ``criterion`` — the selection rule, ``"inertia_elbow"`` (the kneedle knee). This is separate
+      from the distance ``metric``.
+    - ``n_samples`` — how many points the sweep actually ran on (``choose_k`` subsamples above
+      ``max_samples``); with ``n_iter`` and ``random_state`` it makes the choice reproducible from
+      the result alone.
+    """
+
+    k: int
+    candidates: list[int]
+    inertias: list[float]
+    n_samples: int
+    n_iter: int
+    random_state: int
+    criterion: str = "inertia_elbow"
+
+
 def _inertia(x: FloatArray, labels: IntArray, centroids: FloatArray) -> float:
     """k-means objective: sum of squared distances to the assigned centroid, one block at a time
     so the (n, d) difference is never materialised all at once."""
@@ -566,6 +589,32 @@ def _labels_from_condensed(rows: list[tuple[int, int, float, int]], n: int) -> I
     return labels
 
 
+@overload
+def choose_k(
+    embeddings: FloatArray,
+    *,
+    k_min: int = ...,
+    k_max: int = ...,
+    metric: str = ...,
+    n_iter: int = ...,
+    random_state: int = ...,
+    max_samples: int = ...,
+    n_jobs: int = ...,
+    return_evidence: Literal[False] = ...,
+) -> int: ...
+@overload
+def choose_k(
+    embeddings: FloatArray,
+    *,
+    k_min: int = ...,
+    k_max: int = ...,
+    metric: str = ...,
+    n_iter: int = ...,
+    random_state: int = ...,
+    max_samples: int = ...,
+    n_jobs: int = ...,
+    return_evidence: Literal[True],
+) -> ChooseKResult: ...
 @with_blas_limit
 def choose_k(
     embeddings: FloatArray,
@@ -576,17 +625,28 @@ def choose_k(
     n_iter: int = 50,
     random_state: int = 42,
     max_samples: int = 20_000,
-) -> int:
-    """Pick ``n_clusters`` automatically by the inertia elbow. This is the "kneedle" knee of the
-    inertia-vs-k curve: the k past which adding clusters stops buying much tightness.
+    n_jobs: int = 1,
+    return_evidence: bool = False,
+) -> int | ChooseKResult:
+    """Pick ``n_clusters`` automatically by the inertia elbow, the selection criterion here. It is
+    the "kneedle" knee of the inertia-vs-k curve: the k past which adding clusters stops buying
+    much tightness. This is separate from ``metric``, which is the distance (euclidean or cosine).
 
     Runs k-means for each ``k`` in ``[k_min, k_max]`` and returns the elbow. On more than
     ``max_samples`` rows it searches on a deterministic random subsample to bound the cost (the
     returned k still applies to the full data).
 
+    ``n_jobs`` runs the independent per-k fits in parallel. The fits are pinned to one BLAS thread
+    each for the duration, so ``n_jobs`` of them run concurrently without oversubscribing; the
+    result is identical to ``n_jobs=1``. ``return_evidence=True`` returns a :class:`ChooseKResult`
+    (the chosen k plus the per-candidate inertias and the sample size) instead of the bare int, so
+    a caller can publish the evidence behind the choice.
+
     It is a heuristic. For a clear cluster structure it lands on the true k give or take one. For
     gradual structure, treat it as a starting point.
     """
+    if n_jobs < 1:
+        raise ValueError("n_jobs must be >= 1")
     x = np.ascontiguousarray(embeddings, dtype=np.float64)
     if x.ndim != 2:
         raise ValueError("embeddings must be 2-D (n, d)")
@@ -594,25 +654,48 @@ def choose_k(
     hi = min(k_max, n - 1)
     if k_min < 2 or hi < k_min:
         raise ValueError(f"need 2 <= k_min <= k_max < n; got k_min={k_min}, k_max={k_max}, n={n}")
+    if metric not in ("euclidean", "cosine"):
+        raise ValueError(f"unknown metric {metric!r}; use 'euclidean' or 'cosine'")
     if n > max_samples:
         rng = np.random.default_rng(random_state)
         x = x[rng.choice(n, max_samples, replace=False)]
+    # Normalise once for cosine (squared-L2 on unit rows), then every fit runs in euclidean space
+    # on the same array — matching cluster(metric=...) but without re-normalising per candidate.
+    work = _unit_rows(x) if metric == "cosine" else x
     ks = list(range(k_min, hi + 1))
-    if len(ks) == 1:
-        return ks[0]
-    inertias = [
-        cluster(
-            x,
-            method="kmeans",
-            n_clusters=k,
-            metric=metric,
+
+    def _fit_inertia(k: int) -> float:
+        labels, centroids = _kmeans_core(work, k, n_iter=n_iter, random_state=random_state)
+        return _inertia(work, labels, centroids)
+
+    if n_jobs == 1 or len(ks) == 1:
+        inertias = [_fit_inertia(k) for k in ks]
+    else:
+        # The fits are embarrassingly parallel. Pin BLAS to one thread for the sweep so each fit is
+        # single-threaded and n_jobs of them run concurrently (the GEMM in _assign releases the
+        # GIL); this avoids the oversubscription that per-fit multi-threaded BLAS would cause.
+        # _kmeans_core carries no BLAS-cap decorator, so the threads never race on threadpool_limits.
+        from concurrent.futures import ThreadPoolExecutor
+
+        import threadpoolctl
+
+        with (
+            threadpoolctl.threadpool_limits(1, "blas"),
+            ThreadPoolExecutor(max_workers=min(n_jobs, len(ks))) as pool,
+        ):
+            inertias = list(pool.map(_fit_inertia, ks))
+
+    best = ks[0] if len(ks) == 1 else _elbow(ks, inertias)
+    if return_evidence:
+        return ChooseKResult(
+            k=best,
+            candidates=ks,
+            inertias=inertias,
+            n_samples=work.shape[0],
             n_iter=n_iter,
             random_state=random_state,
-            return_centroids=True,
-        ).inertia
-        for k in ks
-    ]
-    return _elbow(ks, inertias)
+        )
+    return best
 
 
 def _elbow(ks: list[int], inertias: list[float]) -> int:
@@ -693,6 +776,22 @@ def kmeans(
 
     Mini-batch needs the native kernel; without it the numpy path runs full Lloyd regardless.
     """
+    return _kmeans_core(
+        x, n_clusters, n_iter=n_iter, random_state=random_state, batch_size=batch_size
+    )
+
+
+def _kmeans_core(
+    x: FloatArray,
+    n_clusters: int,
+    *,
+    n_iter: int = 50,
+    random_state: int = 42,
+    batch_size: int | None = None,
+) -> tuple[IntArray, FloatArray]:
+    """k-means without the BLAS-cap decorator, so it can be called concurrently (e.g. from
+    choose_k's parallel sweep) under a cap the caller has already set, with no nested and
+    thread-unsafe re-entry into ``threadpool_limits``."""
     if n_clusters < 1:
         raise ValueError("n_clusters must be >= 1")
     if n_clusters > x.shape[0]:
