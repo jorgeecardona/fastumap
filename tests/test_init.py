@@ -16,18 +16,34 @@ def test_init_runs_and_is_deterministic() -> None:
 
 
 def test_init_biases_toward_the_start_frame() -> None:
-    # A warm start: seeded from the previous layout, the result keeps the previous frame far
-    # better than a fresh spectral start (which is free to rotate/reflect). The optimiser still
-    # moves points, so this is a correlation, not a freeze — seeded tracks prev, fresh does not.
+    # A warm start keeps the previous frame far better than a fresh spectral start — but only with
+    # a lighter touch (GitLab #16): init sets where the optimiser STARTS, not where it ends, and at
+    # the default epoch count the learning rate decays over the full schedule and drifts almost as
+    # far as a cold run. A reduced n_epochs (or a lower initial_alpha) is what makes init bias hold.
     x = np.random.default_rng(1).standard_normal((400, 24))
     prev = umap_project(x, 2, random_state=42)
-    seeded = umap_project(x, 2, random_state=99, init=prev)
-    fresh = umap_project(x, 2, random_state=99)
+    seeded = umap_project(x, 2, random_state=99, init=prev, n_epochs=30)
+    fresh = umap_project(x, 2, random_state=99, n_epochs=30)
 
     def frame_corr(a: np.ndarray, b: np.ndarray) -> float:
         return abs(float(np.corrcoef(a.ravel(), b.ravel())[0, 1]))
 
     assert frame_corr(seeded, prev) > frame_corr(fresh, prev) + 0.1
+
+
+def test_initial_alpha_reduces_drift_from_init() -> None:
+    # The principled version of the same thing (GitLab #16 option 2): a lower initial_alpha makes
+    # gentle corrections across the full schedule, so a warm start stays closer to its init than
+    # one run at the default full learning rate.
+    x = np.random.default_rng(1).standard_normal((400, 24))
+    prev = umap_project(x, 2, random_state=42)
+
+    def move(emb: np.ndarray) -> float:
+        return float(np.median(np.linalg.norm(emb - prev, axis=1)))
+
+    gentle = umap_project(x, 2, random_state=99, init=prev, initial_alpha=0.05)
+    full = umap_project(x, 2, random_state=99, init=prev, initial_alpha=1.0)
+    assert move(gentle) < move(full)
 
 
 def test_init_is_not_mutated_or_aliased() -> None:

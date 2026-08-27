@@ -221,6 +221,7 @@ def fit(
     spread: float = 1.0,
     n_epochs: int | None = None,
     negative_sample_rate: int = 5,
+    initial_alpha: float = 1.0,
     random_state: int = 42,
     metric: str = "euclidean",
     chunk_count: int = 1,
@@ -251,8 +252,14 @@ def fit(
 
     ``init`` overrides the spectral start with a given ``(n, dimensions)`` embedding. Pass
     the previous view's coordinates so a refreshed layout stays comparable, instead of
-    rotating or reflecting. This is a warm start: the SGD still refines, so lower
-    ``n_epochs`` for a lighter touch. Place any new rows yourself.
+    rotating or reflecting. ``init`` sets where the optimiser *starts*, not where it ends: the
+    learning rate still decays from ``initial_alpha`` over all ``n_epochs``, so at the default
+    epoch count a warm start drifts almost as far as a cold one. For a refreshed view that should
+    stay close to the previous one, also reduce ``n_epochs`` (a lighter touch) or lower
+    ``initial_alpha`` (gentler corrections across the full schedule). Place any new rows yourself.
+
+    ``initial_alpha`` (default 1.0) is the starting SGD learning rate. Lower it with ``init`` to
+    make small corrections rather than a full re-layout.
 
     ``y`` (categorical class labels, one per point, ``-1`` for unlabelled) turns on
     supervised projection: same-label points attract, weighted by ``target_weight`` in
@@ -299,6 +306,7 @@ def fit(
         b=b,
         rng=rng,
         negative_sample_rate=negative_sample_rate,
+        initial_alpha=initial_alpha,
         chunk_count=chunk_count,
         dens_lambda=dens_lambda if densmap else 0.0,
         dens_frac=dens_frac,
@@ -334,6 +342,7 @@ def umap_project(
     spread: float = ...,
     n_epochs: int | None = ...,
     negative_sample_rate: int = ...,
+    initial_alpha: float = ...,
     random_state: int = ...,
     metric: str = ...,
     chunk_count: int = ...,
@@ -359,6 +368,7 @@ def umap_project(
     spread: float = ...,
     n_epochs: int | None = ...,
     negative_sample_rate: int = ...,
+    initial_alpha: float = ...,
     random_state: int = ...,
     metric: str = ...,
     chunk_count: int = ...,
@@ -383,6 +393,7 @@ def umap_project(
     spread: float = 1.0,
     n_epochs: int | None = None,
     negative_sample_rate: int = 5,
+    initial_alpha: float = 1.0,
     random_state: int = 42,
     metric: str = "euclidean",
     chunk_count: int = 1,
@@ -430,6 +441,7 @@ def umap_project(
         spread=spread,
         n_epochs=n_epochs,
         negative_sample_rate=negative_sample_rate,
+        initial_alpha=initial_alpha,
         random_state=random_state,
         metric=metric,
         chunk_count=chunk_count,

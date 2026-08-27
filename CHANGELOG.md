@@ -5,6 +5,24 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.24] - 2026-08-27
+
+### Added
+- `fit` and `umap_project` expose `initial_alpha` (default 1.0), the starting SGD learning rate,
+  already present on `optimize_layout`. With `init=` (a warm start), lowering it makes gentle
+  corrections across the full schedule instead of a full re-layout.
+
+### Changed
+- The `init=` docstring now says plainly that `init` sets where the optimiser starts, not where it
+  ends: the learning rate decays over all `n_epochs`, so at the default epoch count a warm start
+  drifts nearly as far as a cold one. To keep a refreshed view close to the previous one, reduce
+  `n_epochs` or lower `initial_alpha`.
+
+### Notes
+- Density clustering with noise labels (`-1`) is already available as `cluster(method="dbscan")`
+  and `cluster(method="hdbscan")`; both pick the number of clusters themselves and label points
+  that belong to no cluster `-1`, which is what a "belongs to nothing" theme needs.
+
 ## [0.2.23] - 2026-08-27
 
 ### Added
