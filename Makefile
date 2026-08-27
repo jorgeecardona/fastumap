@@ -1,4 +1,4 @@
-.PHONY: sync lint format typecheck test check build grade bench bench-report tox fargate constrained minibatch-1m install-hooks
+.PHONY: sync lint format typecheck test check build grade bench bench-report tox fargate constrained minibatch-1m bump install-hooks
 
 sync:
 	uv sync

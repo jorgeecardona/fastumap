@@ -5,6 +5,20 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.27] - 2026-08-27
+
+### Changed
+- Tooling: ruff now enforces McCabe complexity (`C901`, max 12) as a regression ceiling, and
+  coverage runs in branch mode as well as line (currently 92%, above the 90% floor). `_dbscan`
+  carries a documented `# noqa: C901` (its union / core-relabel / border passes are one algorithm).
+
+### Notes
+- Evaluated mutation testing (mutmut 3.7): it does not run against this stack. Its isolated-
+  interpreter test runner cannot load numpy's single-phase-init C extension twice in a process
+  ("cannot load module more than once per process"), which fails identically on Python 3.12 and
+  3.14, so every mutant reports "not checked". Not added. A subprocess-per-mutant tool (cosmic-ray)
+  would avoid this if mutation coverage is wanted later.
+
 ## [0.2.26] - 2026-08-27
 
 ### Changed

@@ -357,9 +357,10 @@ def _uf_find(parent: list[int], a: int) -> int:
     return a
 
 
-def _dbscan(indices: IntArray, dists: FloatArray, eps: float, min_samples: int) -> IntArray:
+def _dbscan(indices: IntArray, dists: FloatArray, eps: float, min_samples: int) -> IntArray:  # noqa: C901
     """DBSCAN over a precomputed kNN. Core points are unioned to their eps-neighbours; borders take
-    a neighbouring core's label; the rest are noise (-1)."""
+    a neighbouring core's label; the rest are noise (-1). Complexity 13: the union pass, the
+    core-relabel pass and the border pass are one algorithm; splitting them would not read better."""
     n = indices.shape[0]
     within = dists <= eps  # (n, k); column 0 is self at distance 0, so always within
     core = within.sum(axis=1) >= min_samples  # (n,) bool
