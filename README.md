@@ -137,7 +137,7 @@ can. Real embeddings overlap and do not trigger this (MNIST measures 1.013× Llo
 fastumap stays within 0.01 neighbour overlap of umap-learn. Measured on MNIST (784-dimensional,
 seed 42). These numbers are generated rather than transcribed: `make bench-report` regenerates them
 into a dated report under
-[docs/bench/](https://gitlab.com/jorgeecardona/fastumap/-/tree/main/docs/bench), which records the
+[docs/bench/](https://gitlab.com/cardona-oss/fastumap/-/tree/main/docs/bench), which records the
 machine, the load average and every package version they were measured on.
 
 | n | method | wall time | overlap@15 | global corr |

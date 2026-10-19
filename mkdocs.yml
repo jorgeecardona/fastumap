@@ -9,10 +9,10 @@
 site_name: fastumap
 site_description: UMAP and clustering with no JIT at import, for serverless and CPU-limited containers.
 # The project has GitLab's unique-domain Pages enabled, so the site is served from this
-# generated hostname, not the path-based jorgeecardona.gitlab.io/fastumap/.
+# generated hostname, not the path-based cardona-oss.gitlab.io/fastumap/.
 site_url: https://fastumap-942a24.gitlab.io/
-repo_url: https://gitlab.com/jorgeecardona/fastumap
-repo_name: jorgeecardona/fastumap
+repo_url: https://gitlab.com/cardona-oss/fastumap
+repo_name: cardona-oss/fastumap
 copyright: MIT licensed. An independent reimplementation of UMAP, not affiliated with its authors.
 
 docs_dir: docs/site
@@ -87,6 +87,6 @@ markdown_extensions:
 extra:
   social:
     - icon: fontawesome/brands/gitlab
-      link: https://gitlab.com/jorgeecardona/fastumap
+      link: https://gitlab.com/cardona-oss/fastumap
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/fastumap/
