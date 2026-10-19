@@ -30,4 +30,11 @@ NEW="${MAJOR}.${MINOR}.${PATCH}"
 TMP=$(mktemp)
 sed -E "s/^version = \"${CURRENT}\"/version = \"${NEW}\"/" pyproject.toml > "$TMP"
 mv "$TMP" pyproject.toml
+
+# Keep uv.lock's pinned fastumap version in sync with pyproject so the working tree stays
+# clean after a bump (offline + cached = fast; online fallback for a cold cache).
+if command -v uv >/dev/null 2>&1; then
+    uv lock --offline >/dev/null 2>&1 || uv lock >/dev/null 2>&1 || true
+fi
+
 echo "bump-version: ${CURRENT} -> ${NEW}"

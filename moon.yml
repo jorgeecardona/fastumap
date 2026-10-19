@@ -33,6 +33,14 @@ tasks:
     inputs: ['src/**/*.py', 'rust/**/*.rs', 'rust/Cargo.toml', 'pyproject.toml', 'README.md', 'LICENSE']
     outputs: ['dist']
 
+  # Build the mkdocs site strictly (as the `pages` CI job and Read the Docs do). Local parity
+  # with `make docs`; the `pages` job in .gitlab-ci.yml is what publishes to GitLab Pages.
+  # README.md and rust/README.md are inputs because the site includes them via pymdownx snippets.
+  docs:
+    command: 'uv run --extra docs mkdocs build --strict'
+    inputs: ['docs/**/*', 'mkdocs.yml', 'README.md', 'rust/README.md', 'src/**/*.py']
+    outputs: ['site']
+
   # CI-side enforcement of "a src/ change carries a version bump".
   version-guard:
     command: 'sh scripts/ci-version-guard'

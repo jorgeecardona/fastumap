@@ -19,5 +19,7 @@ fi
 
 echo "pre-commit: src/*.py is staged but the version was not bumped; bumping patch."
 sh scripts/bump-version patch
-git add pyproject.toml
+# bump-version also refreshes uv.lock's pinned version, so stage both to keep the commit
+# self-consistent (otherwise uv.lock is left dirty after the commit).
+git add pyproject.toml uv.lock
 echo "pre-commit: version bumped and staged. Add a CHANGELOG.md entry for it before pushing."
