@@ -4,7 +4,7 @@
 # fastumap compiles at BUILD time instead, so it imports in milliseconds. Mostly numpy + scipy,
 # with native SGD/k-means kernels (fastumap._accel) built into the wheel by maturin.
 name = "fastumap"
-version = "0.2.29"
+version = "0.2.30"
 description = "UMAP and clustering with no JIT at import, for serverless and CPU-limited containers."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -61,11 +61,11 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://gitlab.com/jorgeecardona/fastumap"
-Repository = "https://gitlab.com/jorgeecardona/fastumap"
-Documentation = "https://fastumap-942a24.gitlab.io/"
-Issues = "https://gitlab.com/jorgeecardona/fastumap/-/issues"
-Changelog = "https://gitlab.com/jorgeecardona/fastumap/-/blob/main/CHANGELOG.md"
+Homepage = "https://gitlab.com/cardona-oss/fastumap"
+Repository = "https://gitlab.com/cardona-oss/fastumap"
+Documentation = "https://cardona-oss.gitlab.io/fastumap/"
+Issues = "https://gitlab.com/cardona-oss/fastumap/-/issues"
+Changelog = "https://gitlab.com/cardona-oss/fastumap/-/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["maturin>=1.5,<2"]
