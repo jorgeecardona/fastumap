@@ -10,6 +10,9 @@ needs:
       - {kind: secondary, date: 2026-08-25, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/19"}
       - {kind: secondary, date: 2026-08-26, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/21"}
 
+    proofs:
+      - "test:tests/test_hdbscan.py::test_hdbscan_labels_outliers_as_noise"
+      - "test:tests/test_hdbscan.py::test_hdbscan_via_cluster_matches_standalone"
   - id: CL-2
     text: >
       When the caller assigns new points to existing centroids, they get the distance to the assigned
@@ -18,6 +21,9 @@ needs:
       - {kind: secondary, date: 2026-08-25, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/20"}
       - {kind: secondary, date: 2026-08-27, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/27"}
 
+    proofs:
+      - "test:tests/test_cluster.py::test_assign_clusters_return_distances"
+      - "test:tests/test_cluster.py::test_assign_clusters_max_distance_marks_noise"
   - id: CL-3
     text: >
       When the caller fits clusters, they get the size and dispersion of each cluster in the fit's
@@ -25,6 +31,8 @@ needs:
     sources:
       - {kind: secondary, date: 2026-08-27, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/28"}
 
+    proofs:
+      - "test:tests/test_cluster.py::test_cluster_result_dispersion_and_sizes"
   - id: CL-4
     text: >
       When the caller lets the library choose k, they get the evidence for that k (criterion per
@@ -32,6 +40,8 @@ needs:
     sources:
       - {kind: secondary, date: 2026-08-27, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/25"}
 
+    proofs:
+      - "test:tests/test_cluster.py::test_choose_k_return_evidence"
   - id: CL-5
     text: >
       When the caller calls cluster() with its defaults, they can get a result instead of a ValueError.

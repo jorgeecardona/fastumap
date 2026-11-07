@@ -9,6 +9,9 @@ needs:
     sources:
       - {kind: secondary, date: 2026-08-26, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/22"}
 
+    proofs:
+      - "test:tests/test_transform.py::test_umap_project_return_model"
+      - "test:tests/test_transform.py::test_transform_places_points_in_correct_cluster"
   - id: PR-2
     text: >
       When the caller passes init= to keep a layout steady, they can read in the docs how to keep points close
@@ -22,3 +25,6 @@ needs:
       precomputed neighbour graph.
     sources:
       - {kind: secondary, date: 2026-08-25, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/17"}
+
+    proofs:
+      - "test:tests/test_dimensions_and_knn.py::test_precomputed_knn_matches_builtin_bit_for_bit"
