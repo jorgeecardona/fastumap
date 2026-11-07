@@ -48,7 +48,7 @@ needs:
 
   - id: CL-7
     text: >
-      When the caller clusters 1M x 1024 float32 points, the cost is (the iteration count is
-      reported) and the input is not copied to float64.
+      When the caller clusters 1M x 1024 float32 points, they can predict the cost from the reported
+      iteration count, and the input is not copied to float64.
     sources:
       - {kind: secondary, date: 2026-08-25, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/18"}
