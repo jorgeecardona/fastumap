@@ -1,0 +1,24 @@
+who: caller projecting embeddings to 2D
+
+needs:
+
+  - id: PR-1
+    text: >
+      When the data in view changes, the caller can place new points on an existing projection, so the
+      same themes stay in the same places.
+    sources:
+      - {kind: secondary, date: 2026-08-26, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/22"}
+
+  - id: PR-2
+    text: >
+      When the caller passes init= to keep a layout steady, they can read in the docs how to keep points close
+      to their start (reduced n_epochs or initial_alpha).
+    sources:
+      - {kind: secondary, date: 2026-08-25, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/16"}
+
+  - id: PR-3
+    text: >
+      When the caller projects 200k or more points, the kNN step can use more than one thread or a
+      precomputed neighbour graph.
+    sources:
+      - {kind: secondary, date: 2026-08-25, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/17"}

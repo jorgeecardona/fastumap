@@ -1,0 +1,54 @@
+who: caller clustering text embeddings
+
+needs:
+
+  - id: CL-1
+    text: >
+      When a point is far from every cluster, the caller can see that it belongs to no cluster
+      (a noise label), so a cluster description is not diluted by points that had nowhere else to go.
+    sources:
+      - {kind: secondary, date: 2026-08-25, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/19"}
+      - {kind: secondary, date: 2026-08-26, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/21"}
+
+  - id: CL-2
+    text: >
+      When the caller assigns new points to existing centroids, they get the distance to the assigned
+      centroid, so they can reject weak assignments.
+    sources:
+      - {kind: secondary, date: 2026-08-25, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/20"}
+      - {kind: secondary, date: 2026-08-27, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/27"}
+
+  - id: CL-3
+    text: >
+      When the caller fits clusters, they get the size and dispersion of each cluster in the fit's
+      metric, so they can decide which clusters are worth splitting.
+    sources:
+      - {kind: secondary, date: 2026-08-27, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/28"}
+
+  - id: CL-4
+    text: >
+      When the caller lets the library choose k, they get the evidence for that k (criterion per
+      candidate, points used, seed), so they can explain the number to a user.
+    sources:
+      - {kind: secondary, date: 2026-08-27, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/25"}
+
+  - id: CL-5
+    text: >
+      When the caller calls cluster() with its defaults, they can get a result instead of a ValueError.
+    sources:
+      - {kind: secondary, date: 2026-08-26, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/23"}
+    must: true
+
+  - id: CL-6
+    text: >
+      When the caller chooses k over 17 candidates on 100k points, they can get the result in under
+      2 s on an 8-core machine (10.5 s today).
+    sources:
+      - {kind: secondary, date: 2026-08-27, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/24"}
+
+  - id: CL-7
+    text: >
+      When the caller clusters 1M x 1024 float32 points, the cost is (the iteration count is
+      reported) and the input is not copied to float64.
+    sources:
+      - {kind: secondary, date: 2026-08-25, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/18"}
