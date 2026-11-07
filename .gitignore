@@ -50,3 +50,4 @@ src/fastumap/*.so
 # Local-only project instructions; kept out of the public repo.
 CLAUDE.md
 site/          # mkdocs build output
+build/

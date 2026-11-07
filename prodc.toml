@@ -6,3 +6,4 @@ needs = ["product/needs/*.yaml"]
 [proofs.test]
 kind = "pytest"
 root = "."
+results = "build/junit.xml"

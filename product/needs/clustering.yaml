@@ -38,6 +38,8 @@ needs:
     sources:
       - {kind: secondary, date: 2026-08-26, locator: "https://gitlab.com/cardona-oss/fastumap/-/work_items/23"}
     must: true
+    proofs:
+      - "test:tests/test_cluster.py::test_no_n_clusters_picks_k"
 
   - id: CL-6
     text: >
