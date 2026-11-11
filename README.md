@@ -176,9 +176,7 @@ rather than better than it.
 
 - The native kernel ships by default, so per-call speed on large batches is close to umap-learn.
   It runs umap-learn's in-place SGD, in Rust.
-- The numpy fallback, which only an unbuilt source checkout uses, is roughly 2× slower at 1024
-  dimensions and n=5000 (about 40 s against 20 s). A vectorised numpy SGD cannot match numba's
-  compiled loop.
+- The compiled kernel is required; fastumap raises `ImportError` without it.
 
 fastumap is the appropriate choice when import and cold-start cost dominate. On per-call latency
 for large, high-dimensional batches it is roughly even with umap-learn on the kernel path.
@@ -241,9 +239,9 @@ and aarch64/Graviton, musllinux for Alpine, and Windows x86_64) carry it, so it 
 automatically. macOS has no prebuilt wheel yet and builds from the sdist, which requires a Rust
 toolchain, as does any other platform without a prebuilt wheel.
 
-The numpy path remains as a runtime fallback. If the extension is absent, for instance in an
-unbuilt source checkout, fastumap still works, more slowly. The SGD kernel is roughly 1.7 to 1.9×
-faster, with slightly higher overlap.
+The extension is required. If it is absent, for instance in an unbuilt source checkout, fastumap
+raises `ImportError` and tells you to install the wheel or run `uv sync`. It does not fall back to
+a slower path without telling you.
 
 Because the kernel performs umap-learn's in-place walk rather than the fallback's per-epoch
 approximation, it produces a different, higher-quality layout for the same seed. The active path
@@ -251,7 +249,7 @@ can be queried:
 
 ```python
 import fastumap
-fastumap.accelerator_active()   # True if the native kernel is present (the normal case)
+fastumap.accelerator_active()   # always True; kept so existing callers keep working
 ```
 
 Upgrading from `fastumap-accel`: that package no longer exists separately. Its kernels are built
@@ -286,14 +284,9 @@ neighbour recall against exact. Measured on the neighbour search alone, at 256 d
 
 <!-- --8<-- [start:reproducibility] -->
 For a given input and seed, output is bit-identical across processes and machines in the same
-environment. Two things change it across different environments:
-
-- The native kernel against the numpy fallback. The wheels carry the kernel and use it by default;
-  an unbuilt checkout falls back to numpy and differs.
-- `fastumap[ann]`, which changes the neighbour graph above 16,384 points.
-
-Both are properties of the environment. `accelerator_active()` and `ann_available()` report which
-paths a run used, so a stored projection can record how it was produced.
+environment. `fastumap[ann]` changes it: it switches the neighbour graph above 16,384 points to
+the approximate backend. `ann_available()` reports whether it is installed, so a stored projection
+can record how it was produced.
 <!-- --8<-- [end:reproducibility] -->
 
 <!-- --8<-- [end:ann] -->

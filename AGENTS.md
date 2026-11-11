@@ -16,8 +16,9 @@ Architecture:
   `graph.py` (fuzzy simplicial set), `metrics.py`.
 - `rust/` — Rust extension, `fastumap._accel`. Implements the SGD layout kernel and the k-means
   SIMD GEMM kernel. Built by maturin (the build backend in `pyproject.toml`) as an abi3 extension
-  module and shipped in every prebuilt wheel. The pure-NumPy path remains as a silent fallback
-  when the extension is absent (e.g. an unbuilt source checkout).
+  module and shipped in every prebuilt wheel. The extension is required: if it is absent (an
+  unbuilt source checkout), importing `fastumap.layout` or `fastumap.clustering` raises
+  `ImportError`. There is no silent numpy fallback.
 - `fastumap._accel` is the module name; `fastumap.accelerator_active()` reports whether it is live.
 - Lazy imports are intentional (they protect the fast cold start); do not hoist them to the top
   of a module.
@@ -26,7 +27,7 @@ Architecture:
 
 - Toolchain (moon, uv) pinned in `.prototools`; run `proto install` to bring it up.
 - `uv sync` installs Python deps **and** compiles the Rust extension via maturin. This is the
-  normal dev setup step. A fresh clone without `uv sync` runs on the slower numpy fallback.
+  normal dev setup step. A fresh clone without `uv sync` fails with `ImportError` on first use.
 - Building from source (including `uv sync`) requires a Rust toolchain.
 - `make build` (`uv build --out-dir dist`) builds the sdist and wheel into `dist/`.
 - To force-rebuild the Rust extension without a full build: `uv sync --reinstall-package fastumap`.
@@ -57,7 +58,7 @@ Architecture:
   `scripts/ci-version-guard` enforces that any `src/` change carries a bump.
 - **Rust extension must be compiled before tests are meaningful.** After any change under `rust/`,
   run `uv sync` (or `uv sync --reinstall-package fastumap`) to rebuild `fastumap._accel`. If you
-  skip this, tests still pass on the numpy fallback but do not exercise the native kernel.
+  skip this, tests run against the old build of the kernel.
 - **`make check` does not rebuild the wheel.** `moon run :test` is aware of `rust/**/*.rs` as an
   input and triggers a rebuild through maturin when those files change; `make test` does not.
 - **No numba or llvmlite at import.** A test asserts this. Never add a dependency that pulls in

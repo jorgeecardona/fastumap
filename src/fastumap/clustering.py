@@ -32,12 +32,12 @@ minutes, since a numpy inner loop is not the threaded float32 GEMM that budget a
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import dataclass
 from typing import Literal, overload
 
 import numpy as np
 
+from ._native import load_accel
 from ._threads import with_blas_limit
 from ._types import FloatArray, IntArray
 from ._types import unit_rows as _unit_rows
@@ -55,20 +55,12 @@ _MINIBATCH_MIN = 200_000
 _MINIBATCH_BATCH = 10_000  # rows per iteration; ~2 full passes of total work at the default n_iter
 _MINIBATCH_ITER = 100  # mini-batch needs many cheap passes where Lloyd needs few expensive ones
 
-try:
-    # Native k-means, built into the package as fastumap._accel: a matrixmultiply-GEMM + rayon
-    # Lloyd. Clusters 1M x 128 in ~10s (multi-core) vs the numpy path's minutes. Same API,
-    # different (f32) results. Falls back to numpy only if the extension is absent (unbuilt checkout).
-    _accel_kmeans = importlib.import_module("fastumap._accel").kmeans
-except (ImportError, AttributeError):
-    _accel_kmeans = None
-
-try:
-    # Mini-batch k-means (Sculley 2010), the same kernel's CPU-constrained sibling. See the
-    # batch_size docs on `kmeans` for when it is used.
-    _accel_minibatch = importlib.import_module("fastumap._accel").minibatch_kmeans
-except (ImportError, AttributeError):
-    _accel_minibatch = None
+# Native k-means, built into the package as fastumap._accel: a matrixmultiply-GEMM + rayon Lloyd.
+# Clusters 1M x 128 in ~10s (multi-core). Mini-batch (Sculley 2010) is its CPU-constrained
+# sibling; see the batch_size docs on `kmeans`. A missing extension raises at import.
+_accel = load_accel()
+_accel_kmeans = _accel.kmeans
+_accel_minibatch = _accel.minibatch_kmeans
 
 
 @dataclass(frozen=True)

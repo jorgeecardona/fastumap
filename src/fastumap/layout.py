@@ -10,12 +10,12 @@ Two steps:
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import dataclass
 
 import numpy as np
 
 from . import _scipy
+from ._native import load_accel
 from ._types import FloatArray, IntArray
 from .graph import FuzzyGraph, make_epochs_per_sample
 
@@ -33,22 +33,16 @@ class _DensityStats:
     mu_tot: float  # total membership mass, sum(graph.weight)
 
 
-try:
-    # Native accelerator. Built into the package as the compiled `fastumap._accel` submodule.
-    # It is a Rust reimplementation of the SGD. It does umap-learn's true in-place walk: faster
-    # and higher quality. The pure-numpy path below is the fallback for an sdist build without
-    # Rust. Imported dynamically so the type checker doesn't resolve a compiled, stub-less module.
-    _accel_optimize = importlib.import_module("fastumap._accel").optimize_layout
-except ImportError:
-    _accel_optimize = None
+# Native accelerator, the compiled `fastumap._accel` submodule: a Rust reimplementation of the SGD
+# that does umap-learn's true in-place walk. A missing extension raises at import.
+_accel_optimize = load_accel().optimize_layout
 
 
 def accelerator_active() -> bool:
     """Whether the native ``fastumap._accel`` SGD kernel is present and will be used.
 
-    Analogous to ``torch.cuda.is_available()``. The kernel is compiled into the wheel, so this
-    is normally ``True``. It is ``False`` only when the extension is not present, e.g. an
-    unbuilt source checkout. Then the pure-numpy path runs instead.
+    Always ``True`` for an importable fastumap: a missing extension makes ``import fastumap``'s
+    submodules raise ``ImportError`` instead of running without it.
 
     The kernel does umap-learn's true in-place walk. So it produces a *different*
     (higher-quality) layout than the numpy fallback for the same seed.

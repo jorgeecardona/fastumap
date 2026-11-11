@@ -5,6 +5,16 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.33] - 2026-11-11
+
+### Changed
+- fastumap now requires its compiled kernel (`fastumap._accel`). Without it, import raises
+  `ImportError` with how to fix it, instead of running a slower numpy path without telling you.
+  Installs from a wheel or the sdist always have the kernel; only an unbuilt source checkout lacks it.
+
+### Added
+- macOS wheels (arm64 and x86_64) built in CI, so `pip install fastumap` needs no Rust on a Mac.
+
 ## [0.2.32] - 2026-11-11
 
 ### Changed
