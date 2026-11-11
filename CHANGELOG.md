@@ -5,6 +5,19 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.34] - 2026-11-11
+
+### Changed
+- k-means always runs on the native kernel. The size threshold is gone: `choose_k` on a 5,000 x
+  768 subsample fell under it and ran every candidate fit on numpy (70 s in production). Below the
+  old threshold numpy was faster by about 1 ms (#29).
+- k-means labels are now exactly the nearest returned centroid (`assign_clusters` on the training
+  rows gives the same labels). The kernel's float32 labels could disagree on a few boundary points.
+
+### Fixed
+- Centroid computation after a native fit is one sparse product instead of one pass per dimension
+  (5,000 x 784: 123 ms to 18 ms per fit).
+
 ## [0.2.33] - 2026-11-11
 
 ### Changed

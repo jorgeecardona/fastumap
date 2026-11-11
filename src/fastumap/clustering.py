@@ -8,9 +8,8 @@ Clustering does not need it.
 Four methods, all ours:
 
 - ``method="kmeans"`` — k-means (k-means++ seeding, Lloyd iterations, blocked assignment so the
-  n-by-k distance matrix is never materialised). Fastest. You pick ``n_clusters``. Above ~50k
-  points it routes through the built-in native kernel (``fastumap._accel``): ~10 s at 1M x 128.
-  Below that, the deterministic numpy path here.
+  n-by-k distance matrix is never materialised). Fastest. You pick ``n_clusters``. Runs on the
+  built-in native kernel (``fastumap._accel``) at every size: ~10 s at 1M x 128.
 - ``method="spectral"`` — spectral clustering. Build the fuzzy kNN graph. Take the leading
   normalised-adjacency eigenvectors (fastumap's own spectral machinery). k-means those. Finds
   non-convex clusters k-means alone misses. Needs ``fastumap[ann]`` only above ~16k points, where
@@ -22,12 +21,9 @@ Four methods, all ours:
   reduction when you don't know k.
 
 Memory: the native kernel runs in float32, but the numpy entry points upcast the input to float64
-(``np.ascontiguousarray(..., dtype=np.float64)``) for a deterministic-to-the-byte result and for
-the inertia. So on any path the float64 work array is the memory driver at large n: a
+(``np.ascontiguousarray(..., dtype=np.float64)``) for the inertia. So on any path the float64 work array is the memory driver at large n: a
 1,000,000 x 1024 float32 input becomes an ~8 GB float64 array. The assignment step is blocked, so
-the n-by-k distance matrix on top of that stays bounded by the block size, not by n. At 1M the
-native kernel meets the ~10 s budget; without it (an unbuilt checkout) the numpy fallback is
-minutes, since a numpy inner loop is not the threaded float32 GEMM that budget assumes.
+the n-by-k distance matrix on top of that stays bounded by the block size, not by n.
 """
 
 from __future__ import annotations
@@ -43,10 +39,6 @@ from ._types import FloatArray, IntArray
 from ._types import unit_rows as _unit_rows
 
 _BLOCK = 4096  # rows per block in the assignment step; bounds peak memory to block-by-k
-_ACCEL_MIN = 50_000  # below this the numpy path is fast and deterministic; above, use the accel
-# The numpy path cost grows with n*d, not n alone: 24k x 768 took 11.8 s on numpy vs 3.6 s on the
-# accel (one core). So wide inputs also use the accel. 6.4M cells = 50k rows x 128 dims.
-_ACCEL_MIN_CELLS = 6_400_000
 # Above this, full Lloyd's per-iteration O(n*k*d) pass is the wall on a small container, so the
 # default switches to mini-batch. Chosen by n ALONE, never by core count: gating on cores would
 # make the same input and seed give different labels on different machines, which is exactly the
@@ -905,27 +897,15 @@ def _assign_with_distances(x: FloatArray, centroids: FloatArray) -> tuple[IntArr
     return labels, np.sqrt(nearest_d2)
 
 
-def _kmeanspp_init(x: FloatArray, k: int, rng: np.random.Generator) -> FloatArray:
-    """k-means++ seeding: spread the initial centroids by distance-squared sampling."""
-    n = x.shape[0]
-    centroids = np.empty((k, x.shape[1]), dtype=np.float64)
-    centroids[0] = x[rng.integers(n)]
-    closest = np.sum((x - centroids[0]) ** 2, axis=1)
-    for i in range(1, k):
-        total = float(closest.sum())
-        probs = closest / total if total > 0.0 else np.full(n, 1.0 / n)
-        centroids[i] = x[rng.choice(n, p=probs)]
-        closest = np.minimum(closest, np.sum((x - centroids[i]) ** 2, axis=1))
-    return centroids
-
-
 def _centroids_from_labels(x: FloatArray, labels: IntArray, k: int) -> FloatArray:
     """Per-cluster mean — the accel returns labels only, so recover centroids here."""
-    dim = x.shape[1]
+    from scipy.sparse import csr_matrix  # lazy: keeps import light
+
+    n = x.shape[0]
     counts = np.bincount(labels, minlength=k).astype(np.float64)
-    centroids = np.zeros((k, dim), dtype=np.float64)
-    for d in range(dim):
-        centroids[:, d] = np.bincount(labels, weights=x[:, d], minlength=k)
+    # One sparse (k, n) membership matrix times x: one pass over the data, not one per dimension.
+    member = csr_matrix((np.ones(n), (labels, np.arange(n))), shape=(k, n))
+    centroids = np.asarray(member @ x, dtype=np.float64)
     nonempty = counts > 0
     centroids[nonempty] /= counts[nonempty, None]
     return centroids
@@ -943,10 +923,8 @@ def kmeans(
 ) -> tuple[IntArray, FloatArray]:
     """Lloyd's k-means with k-means++ init. Returns ``(labels, centroids)``.
 
-    Uses the built-in native kernel (fastumap._accel) above ``_ACCEL_MIN`` points, or above
-    ``_ACCEL_MIN_CELLS`` values (n times d) for wide inputs, when present
-    (~10s at 1M x 128 vs minutes for numpy). Otherwise the pure-numpy path here, which is
-    deterministic to the byte. Both converge to the same objective within the usual tolerance.
+    Runs on the built-in native kernel (fastumap._accel) at every size: ~10 s at 1M x 128.
+    Labels are identical for the same input and seed at any thread count.
 
     ``batch_size`` picks between full Lloyd and **mini-batch** k-means (Sculley 2010). Full Lloyd
     touches all ``n`` rows every iteration, which is fine with cores to spare and slow on a
@@ -958,8 +936,6 @@ def kmeans(
       is on ``n`` only, so the same input and seed give the same labels on any machine.
     - ``0`` — force full Lloyd at any size.
     - a positive int — force mini-batch with that batch size.
-
-    Mini-batch needs the native kernel; without it the numpy path runs full Lloyd regardless.
 
     ``n_init`` restarts the fit from that many seeds and keeps the lowest-inertia result. ``None``
     (default) is a single run. Mini-batch can settle into a bad optimum on well-separated clusters
@@ -1026,7 +1002,7 @@ def _kmeans_single(
     random_state: int = 42,
     batch_size: int | None = None,
 ) -> tuple[IntArray, FloatArray]:
-    """One k-means fit (mini-batch, native full Lloyd, or numpy full Lloyd by size and build)."""
+    """One k-means fit on the native kernel: mini-batch above ``_MINIBATCH_MIN`` rows, else Lloyd."""
     if n_clusters < 1:
         raise ValueError("n_clusters must be >= 1")
     if n_clusters > x.shape[0]:
@@ -1035,7 +1011,7 @@ def _kmeans_single(
         raise ValueError("batch_size must be >= 0 (0 forces full Lloyd, None picks by n)")
     n = x.shape[0]
     auto_minibatch = batch_size is None and n >= _MINIBATCH_MIN
-    if _accel_minibatch is not None and (auto_minibatch or (batch_size or 0) > 0):
+    if auto_minibatch or (batch_size or 0) > 0:
         batch = _MINIBATCH_BATCH if batch_size in (None, 0) else batch_size
         # Mini-batch trades an expensive pass for many cheap ones, so it wants more iterations
         # than Lloyd. Only override a caller who left n_iter at its Lloyd default.
@@ -1045,31 +1021,27 @@ def _kmeans_single(
             _accel_minibatch(data, n_clusters, iters, int(batch), int(random_state)),
             dtype=np.int64,
         )
-        return labels, _centroids_from_labels(data, labels, n_clusters)
-    if _accel_kmeans is not None and (n >= _ACCEL_MIN or n * x.shape[1] >= _ACCEL_MIN_CELLS):
-        data = np.ascontiguousarray(x, dtype=np.float64)
-        labels = np.asarray(
-            _accel_kmeans(data, n_clusters, n_iter, int(random_state)), dtype=np.int64
-        )
-        return labels, _centroids_from_labels(data, labels, n_clusters)
-    rng = np.random.default_rng(random_state)
-    centroids = _kmeanspp_init(x, n_clusters, rng)
-    labels = _assign(x, centroids)
-    for _ in range(n_iter):
-        # new centroids = per-cluster mean; a bincount scatter, one pass over the dims.
-        counts = np.bincount(labels, minlength=n_clusters).astype(np.float64)
-        sums = np.zeros_like(centroids)
-        for d in range(x.shape[1]):
-            sums[:, d] = np.bincount(labels, weights=x[:, d], minlength=n_clusters)
-        nonempty = counts > 0
-        new = centroids.copy()
-        new[nonempty] = sums[nonempty] / counts[nonempty, None]  # keep empty clusters put
-        moved = _assign(x, new)
-        if np.array_equal(moved, labels) and np.allclose(new, centroids):
-            centroids = new
-            break
-        centroids, labels = new, moved
-    return labels, centroids
+        return _nearest_centroid_fit(data, labels, n_clusters)
+    # Always the native kernel, at any size. A size gate here cost callers seconds to a minute
+    # whenever a subsample or a dimension count put them under it (choose_k on 5,000 x 768 rows
+    # took 70 s), to save about 1 ms on tiny inputs (#29).
+    data = np.ascontiguousarray(x, dtype=np.float64)
+    labels = np.asarray(_accel_kmeans(data, n_clusters, n_iter, int(random_state)), dtype=np.int64)
+    return _nearest_centroid_fit(data, labels, n_clusters)
+
+
+def _nearest_centroid_fit(
+    data: FloatArray, labels: IntArray, n_clusters: int
+) -> tuple[IntArray, FloatArray]:
+    """Return centroids as the label means, and labels as the nearest of those centroids.
+
+    The kernel works in float32 and may stop before convergence, so a few of its labels are not
+    the nearest float64 centroid. One more assignment pass fixes that: the returned labels are
+    then exactly what ``assign_clusters`` gives for the returned centroids. The centroids are not
+    recomputed after it.
+    """
+    centroids = _centroids_from_labels(data, labels, n_clusters)
+    return _assign(data, centroids), centroids
 
 
 def _spectral(
