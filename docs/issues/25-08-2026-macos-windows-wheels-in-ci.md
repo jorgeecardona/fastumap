@@ -86,3 +86,13 @@ MIT and public, so it looks eligible. Cost note if that lands: macOS bills at co
 belongs on a tag-only trigger, not on every push.
 
 Still OPEN until PyPI shows a `macosx_*` wheel. The Windows half is done and verified.
+
+## Update 2026-11-11 — macOS moves to GitLab
+
+The cardona-oss group is now on GitLab's Open Source plan (Ultimate, until 2027-10-18), so the
+hosted macOS runners are available. Added the `wheels-macos` job (`saas-macos-medium-m1`,
+`macos-15-xcode-16`): builds aarch64 + x86_64 abi3 wheels on one runner, publishes with OIDC and
+`--skip-existing`. Runs on a release (pyproject.toml change); manual on other main pushes. Deleted
+`.github/workflows/macos-wheels.yml`, since no GitHub mirror is needed.
+
+Still OPEN until PyPI shows a `macosx_*` wheel.

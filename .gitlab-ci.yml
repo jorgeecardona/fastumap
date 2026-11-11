@@ -208,6 +208,61 @@ wheels-windows:
       - dist
     expire_in: 1 week
 
+# macOS abi3 wheels (arm64 + x86_64), so `pip install fastumap` needs no Rust toolchain on a Mac.
+#
+# The cardona-oss group is on GitLab's Open Source plan (Ultimate), which includes the hosted macOS
+# runners. They bill at cost factor 6, so like wheels-windows this runs only when pyproject.toml
+# changes (a release). On other main pushes it is a manual job: running it uploads the wheels to
+# the version already on PyPI (PyPI accepts new files on an existing version; --skip-existing makes
+# a re-run a no-op). Best-effort: a macOS flake must not block the Linux publish.
+#
+# Python and Rust are not assumed on the image: uv brings Python, rustup brings Rust. One runner
+# (Apple silicon) builds both arches; x86_64 is a cross-compile, which needs only the Rust target.
+wheels-macos:
+  tags:
+    - saas-macos-medium-m1
+  image: macos-15-xcode-16
+  needs: []
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        paths:
+          - pyproject.toml
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  id_tokens:
+    PYPI_ID_TOKEN:
+      aud: pypi
+  environment:
+    name: pypi
+    url: https://pypi.org/project/fastumap/
+  variables:
+    MACOSX_DEPLOYMENT_TARGET: "11.0"
+  script:
+    - curl -LsSf https://astral.sh/uv/install.sh | sh
+    - curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+    - export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+    - rustup target add aarch64-apple-darwin x86_64-apple-darwin
+    - uv venv --python 3.13 .venv
+    - uv pip install --python .venv maturin twine
+    # cp311-abi3: one wheel per arch covers Python 3.11+, same as every other platform here.
+    - .venv/bin/maturin build --release --target aarch64-apple-darwin -m rust/Cargo.toml -o dist
+    - .venv/bin/maturin build --release --target x86_64-apple-darwin -m rust/Cargo.toml -o dist
+    - ls dist
+    # Mint a one-shot PyPI token from the job's OIDC id_token, same exchange as wheels-windows.
+    - >-
+      TOKEN=$(curl -sSf -X POST https://pypi.org/_/oidc/mint-token
+      -H 'Content-Type: application/json' -d "{\"token\": \"$PYPI_ID_TOKEN\"}"
+      | .venv/bin/python -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+    - TWINE_USERNAME=__token__ TWINE_PASSWORD="$TOKEN" .venv/bin/twine upload --skip-existing --non-interactive dist/*.whl
+  artifacts:
+    paths:
+      - dist
+    expire_in: 1 week
+
 # Docs site -> GitLab Pages, main only. mkdocstrings reads src/fastumap statically (griffe), so
 # this job never installs fastumap and never needs a Rust toolchain: --no-install-project keeps
 # the sync to the docs extra alone, --no-sync stops `uv run` putting the project back. Builds in
