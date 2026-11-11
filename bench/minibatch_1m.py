@@ -48,13 +48,13 @@ def main() -> None:
 
     import os
 
-    from fastumap import clustering
+    from fastumap import _kmeans, clustering
 
     if args.sift:
         # The canonical 1M x 128 benchmark set (Jegou et al.), what faiss benchmarks on — a real
         # distribution rather than anything this script could invent.
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from cluster_bench import _download_sift, _read_fvecs  # pyright: ignore[reportPrivateUsage]
+        from cluster_bench import _download_sift, _read_fvecs
 
         _stderr(f"reading SIFT1M ... (cpu_count={os.cpu_count()})")
         x = _read_fvecs(_download_sift(), args.n)
@@ -66,7 +66,7 @@ def main() -> None:
     start = time.perf_counter()
     mb_labels, mb_centroids = clustering.kmeans(x, args.k)  # auto: mini-batch above the threshold
     mb_s = time.perf_counter() - start
-    mb_inertia = clustering._inertia(x, mb_labels, mb_centroids)  # pyright: ignore[reportPrivateUsage]
+    mb_inertia = _kmeans.inertia(x, mb_labels, mb_centroids)
     groups = len(set(mb_labels.tolist()))
     _stderr(f"mini-batch {mb_s:7.2f}s  inertia={mb_inertia:.5e}  groups={groups}")
     print(f"| {args.cap} | mini-batch | {mb_s:.1f} s | {mb_inertia:.4e} | {groups} |")
@@ -76,7 +76,7 @@ def main() -> None:
     start = time.perf_counter()
     ll_labels, ll_centroids = clustering.kmeans(x, args.k, batch_size=0)
     ll_s = time.perf_counter() - start
-    ll_inertia = clustering._inertia(x, ll_labels, ll_centroids)  # pyright: ignore[reportPrivateUsage]
+    ll_inertia = _kmeans.inertia(x, ll_labels, ll_centroids)
     _stderr(f"lloyd      {ll_s:7.2f}s  inertia={ll_inertia:.5e}")
     print(
         f"| {args.cap} | full Lloyd | {ll_s:.1f} s | {ll_inertia:.4e} | "

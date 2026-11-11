@@ -33,26 +33,10 @@ from typing import Literal, overload
 
 import numpy as np
 
-from ._native import load_accel
+from . import _density, _kmeans
 from ._threads import with_blas_limit
 from ._types import FloatArray, IntArray
 from ._types import unit_rows as _unit_rows
-
-_BLOCK = 4096  # rows per block in the assignment step; bounds peak memory to block-by-k
-# Above this, full Lloyd's per-iteration O(n*k*d) pass is the wall on a small container, so the
-# default switches to mini-batch. Chosen by n ALONE, never by core count: gating on cores would
-# make the same input and seed give different labels on different machines, which is exactly the
-# guarantee this library sells. batch_size=0 forces full Lloyd back on at any size.
-_MINIBATCH_MIN = 200_000
-_MINIBATCH_BATCH = 10_000  # rows per iteration; ~2 full passes of total work at the default n_iter
-_MINIBATCH_ITER = 100  # mini-batch needs many cheap passes where Lloyd needs few expensive ones
-
-# Native k-means, built into the package as fastumap._accel: a matrixmultiply-GEMM + rayon Lloyd.
-# Clusters 1M x 128 in ~10s (multi-core). Mini-batch (Sculley 2010) is its CPU-constrained
-# sibling; see the batch_size docs on `kmeans`. A missing extension raises at import.
-_accel = load_accel()
-_accel_kmeans = _accel.kmeans
-_accel_minibatch = _accel.minibatch_kmeans
 
 
 @dataclass(frozen=True)
@@ -101,34 +85,6 @@ class ChooseKResult:
     n_iter: int
     random_state: int
     criterion: str = "inertia_elbow"
-
-
-def _inertia(x: FloatArray, labels: IntArray, centroids: FloatArray) -> float:
-    """k-means objective: sum of squared distances to the assigned centroid, one block at a time
-    so the (n, d) difference is never materialised all at once."""
-    total = 0.0
-    for start in range(0, x.shape[0], _BLOCK):
-        block = x[start : start + _BLOCK]
-        diff = block - centroids[labels[start : start + _BLOCK]]
-        total += float(np.einsum("ij,ij->", diff, diff))
-    return total
-
-
-def _dispersion_and_sizes(
-    x: FloatArray, labels: IntArray, centroids: FloatArray, k: int
-) -> tuple[FloatArray, IntArray]:
-    """Per-cluster mean distance to the assigned centroid, and per-cluster point counts. Blocked
-    like ``_inertia`` (the (n, d) difference is never materialised at once). An empty cluster gets
-    dispersion 0.0."""
-    sizes = np.bincount(labels, minlength=k).astype(np.int64)
-    dist_sums = np.zeros(k, dtype=np.float64)
-    for start in range(0, x.shape[0], _BLOCK):
-        lbl = labels[start : start + _BLOCK]
-        diff = x[start : start + _BLOCK] - centroids[lbl]
-        dist = np.sqrt(np.einsum("ij,ij->i", diff, diff))
-        dist_sums += np.bincount(lbl, weights=dist, minlength=k)
-    dispersion = np.divide(dist_sums, sizes, out=np.zeros(k, dtype=np.float64), where=sizes > 0)
-    return dispersion, sizes
 
 
 @overload
@@ -280,16 +236,18 @@ def cluster(
             random_state,
         )
         # spectral returns labels only; recover input-space centroids from them when asked.
-        centroids = _centroids_from_labels(work, labels, n_clusters) if return_centroids else None
+        centroids = (
+            _kmeans.centroids_from_labels(work, labels, n_clusters) if return_centroids else None
+        )
     else:
         raise ValueError(
             f"unknown method {method!r}; use 'kmeans', 'spectral', 'dbscan', or 'hdbscan'"
         )
     if return_centroids:
         assert centroids is not None
-        dispersion, sizes = _dispersion_and_sizes(work, labels, centroids, n_clusters)
+        dispersion, sizes = _kmeans.dispersion_and_sizes(work, labels, centroids, n_clusters)
         return ClusterResult(
-            labels, centroids, _inertia(work, labels, centroids), dispersion, sizes
+            labels, centroids, _kmeans.inertia(work, labels, centroids), dispersion, sizes
         )
     return labels
 
@@ -339,15 +297,17 @@ def _cluster_reduced(
     if method in ("dbscan", "hdbscan"):
         return labels  # density labels have noise (-1) and no centroids to re-assign against
     k = n_clusters if n_clusters is not None else int(labels.max()) + 1
-    centroids = _centroids_from_labels(work, labels, k)
+    centroids = _kmeans.centroids_from_labels(work, labels, k)
     # Re-assign every point to its nearest full-space centroid, so the returned labels follow the
     # same rule assign_clusters applies to future points. Below ~32 dims up to 9-60% of points
     # would otherwise disagree (MNIST 24k, k=50). The centroids are not recomputed after this.
-    labels = _assign(work, centroids)
+    labels = _kmeans.assign(work, centroids)
     if not return_centroids:
         return labels
-    dispersion, sizes = _dispersion_and_sizes(work, labels, centroids, k)
-    return ClusterResult(labels, centroids, _inertia(work, labels, centroids), dispersion, sizes)
+    dispersion, sizes = _kmeans.dispersion_and_sizes(work, labels, centroids, k)
+    return ClusterResult(
+        labels, centroids, _kmeans.inertia(work, labels, centroids), dispersion, sizes
+    )
 
 
 @overload
@@ -409,8 +369,8 @@ def assign_clusters(
         raise ValueError("max_distance must be >= 0")
     work = _unit_rows(x) if metric == "cosine" else x
     if not return_distances and max_distance is None:
-        return _assign(work, c)  # fast path: argmin only, no per-row distance needed
-    labels, distances = _assign_with_distances(work, c)
+        return _kmeans.assign(work, c)  # fast path: argmin only, no per-row distance needed
+    labels, distances = _kmeans.assign_with_distances(work, c)
     if max_distance is not None:
         labels = labels.copy()
         labels[distances > max_distance] = -1
@@ -455,62 +415,7 @@ def dbscan(
     if eps is None:
         col = min(min_samples, k - 1)  # distance to the min_samples-th neighbour (column 0 = self)
         eps = float(np.median(dists[:, col]))
-    return _dbscan(indices, dists, float(eps), min_samples)
-
-
-def _uf_find(parent: list[int], a: int) -> int:
-    """Union-find root of ``a`` with path halving; ``parent`` is mutated in place. Shared by dbscan,
-    the mutual-reachability MST, and single linkage, which otherwise each reimplemented it."""
-    while parent[a] != a:
-        parent[a] = parent[parent[a]]
-        a = parent[a]
-    return a
-
-
-def _dbscan(indices: IntArray, dists: FloatArray, eps: float, min_samples: int) -> IntArray:  # noqa: C901
-    """DBSCAN over a precomputed kNN. Core points are unioned to their eps-neighbours; borders take
-    a neighbouring core's label; the rest are noise (-1). Complexity 13: the union pass, the
-    core-relabel pass and the border pass are one algorithm; splitting them would not read better."""
-    n = indices.shape[0]
-    within = dists <= eps  # (n, k); column 0 is self at distance 0, so always within
-    core = within.sum(axis=1) >= min_samples  # (n,) bool
-
-    parent = list(range(n))
-
-    def union(a: int, b: int) -> None:
-        ra, rb = _uf_find(parent, a), _uf_find(parent, b)
-        if ra != rb:
-            parent[max(ra, rb)] = min(ra, rb)
-
-    core_points = np.where(core)[0]
-    for i in core_points:
-        ii = int(i)
-        row_idx = indices[ii]
-        row_within = within[ii]
-        for pos in range(row_idx.shape[0]):
-            if row_within[pos]:
-                j = int(row_idx[pos])
-                if j != ii and core[j]:
-                    union(ii, j)
-
-    labels = np.full(n, -1, dtype=np.int64)
-    remap: dict[int, int] = {}
-    for i in core_points:
-        root = _uf_find(parent, int(i))
-        if root not in remap:
-            remap[root] = len(remap)
-        labels[int(i)] = remap[root]
-    # border points: a non-core point within eps of a core takes that core's cluster label.
-    for i in range(n):
-        if core[i] or labels[i] != -1:
-            continue
-        row_idx = indices[i]
-        row_within = within[i]
-        for pos in range(row_idx.shape[0]):
-            if row_within[pos] and core[int(row_idx[pos])]:
-                labels[i] = labels[int(row_idx[pos])]
-                break
-    return labels
+    return _density.dbscan_from_knn(indices, dists, float(eps), min_samples)
 
 
 @with_blas_limit
@@ -570,179 +475,7 @@ def hdbscan(
     k = min(max(n_neighbors, samples + 1), n)
     indices, dists = knn_graph(work, k, metric=metric, mode="auto")
     core = dists[:, min(samples, k - 1)]  # min_samples-th neighbour; column 0 is self
-    return _hdbscan(indices, dists, core, min_cluster_size)
-
-
-def _hdbscan(
-    indices: IntArray, dists: FloatArray, core: FloatArray, min_cluster_size: int
-) -> IntArray:
-    """HDBSCAN over a precomputed kNN and its core distances: MST -> single-linkage tree ->
-    condensed tree -> stability selection -> labels."""
-    n = indices.shape[0]
-    edges = _mutual_reachability_mst(indices, dists, core)
-    left, right, height, size = _single_linkage(edges, n)
-    rows = _condense(left, right, height, size, n, min_cluster_size)
-    return _labels_from_condensed(rows, n)
-
-
-def _mutual_reachability_mst(
-    indices: IntArray, dists: FloatArray, core: FloatArray
-) -> list[tuple[float, int, int]]:
-    """Kruskal over the kNN edges, weighted by mutual reachability. Returns exactly ``n - 1``
-    edges ``(weight, a, b)`` ascending. The kNN graph can be disconnected, so whatever components
-    survive are joined at ``inf`` — a merge that costs infinite density, i.e. lambda 0."""
-    n, k = indices.shape
-    src = np.repeat(np.arange(n, dtype=np.int64), k - 1)
-    dst = np.ascontiguousarray(indices[:, 1:]).ravel()
-    d = np.ascontiguousarray(dists[:, 1:]).ravel()
-    weight = np.maximum(np.maximum(core[src], core[dst]), d)
-    order = np.argsort(weight, kind="stable")
-    # .tolist() once: iterating numpy scalars in the Kruskal loop below is several times slower.
-    ws = weight[order].tolist()
-    as_ = src[order].tolist()
-    bs = dst[order].tolist()
-
-    parent = list(range(n))
-
-    mst: list[tuple[float, int, int]] = []
-    for pos in range(len(ws)):
-        ra, rb = _uf_find(parent, as_[pos]), _uf_find(parent, bs[pos])
-        if ra == rb:
-            continue
-        parent[rb] = ra
-        mst.append((ws[pos], as_[pos], bs[pos]))
-        if len(mst) == n - 1:
-            break
-    if len(mst) < n - 1:  # disconnected kNN graph: bridge the components at infinite distance
-        roots = [i for i in range(n) if _uf_find(parent, i) == i]
-        for other in roots[1:]:
-            parent[_uf_find(parent, other)] = _uf_find(parent, roots[0])
-            mst.append((float("inf"), roots[0], other))
-    return mst
-
-
-def _single_linkage(
-    mst: list[tuple[float, int, int]], n: int
-) -> tuple[list[int], list[int], list[float], list[int]]:
-    """MST edges (ascending) -> single-linkage tree. Node ``i < n`` is a point; node ``n + j`` is
-    the merge made by edge ``j``, joining ``left[j]`` and ``right[j]`` at ``height[j]``."""
-    parent = list(range(n))
-    node_of = list(range(n))  # union-find root -> the tree node that root currently stands for
-    size = [1] * (2 * n - 1)
-    left = [0] * (n - 1)
-    right = [0] * (n - 1)
-    height = [0.0] * (n - 1)
-
-    for j, (w, a, b) in enumerate(mst):
-        ra, rb = _uf_find(parent, a), _uf_find(parent, b)
-        na, nb = node_of[ra], node_of[rb]
-        node = n + j
-        left[j], right[j], height[j] = na, nb, w
-        size[node] = size[na] + size[nb]
-        parent[rb] = ra
-        node_of[ra] = node
-    return left, right, height, size
-
-
-def _condense(
-    left: list[int],
-    right: list[int],
-    height: list[float],
-    size: list[int],
-    n: int,
-    min_cluster_size: int,
-) -> list[tuple[int, int, float, int]]:
-    """Walk the single-linkage tree down from the root, dropping every branch smaller than
-    ``min_cluster_size``. Returns rows ``(cluster, child, lambda, child_size)``: ``child < n`` is a
-    point leaving ``cluster`` at that lambda, ``child >= n`` is a sub-cluster born there. Cluster
-    ids start at ``n`` (the root) and always exceed their parent's."""
-
-    def subtree_points(node: int) -> list[int]:
-        points: list[int] = []
-        stack = [node]
-        while stack:
-            cur = stack.pop()
-            if cur < n:
-                points.append(cur)
-            else:
-                stack.append(left[cur - n])
-                stack.append(right[cur - n])
-        return points
-
-    rows: list[tuple[int, int, float, int]] = []
-    next_label = n + 1
-    stack = [(2 * n - 2, n)]  # (tree node, the cluster id it belongs to)
-    while stack:
-        node, label = stack.pop()
-        if node < n:
-            continue
-        j = node - n
-        lam = 1.0 / height[j] if height[j] > 0.0 else float("inf")
-        lc, rc = left[j], right[j]
-        big_l, big_r = size[lc] >= min_cluster_size, size[rc] >= min_cluster_size
-        if big_l and big_r:  # a real split: two new clusters born at lam
-            for child in (lc, rc):
-                rows.append((label, next_label, lam, size[child]))
-                stack.append((child, next_label))
-                next_label += 1
-        elif not big_l and not big_r:  # the whole branch falls out; nothing below is a cluster
-            for point in subtree_points(node):
-                rows.append((label, point, lam, 1))
-        else:  # one side is too small: it falls out, the other stays this same cluster
-            small, big = (lc, rc) if not big_l else (rc, lc)
-            for point in subtree_points(small):
-                rows.append((label, point, lam, 1))
-            stack.append((big, label))
-    return rows
-
-
-def _labels_from_condensed(rows: list[tuple[int, int, float, int]], n: int) -> IntArray:
-    """Score every cluster in the condensed tree by stability and keep the best non-overlapping
-    set (excess of mass), then label each point by the deepest kept cluster above it.
-
-    Stability of a cluster is ``sum over its children of (lambda_leave - lambda_birth) * size`` —
-    how much density range it survives, weighted by how many points survive it. A cluster is kept
-    only if it beats the total of its descendants; otherwise the descendants win. The root is
-    never a cluster (it holds everything, so "one big cluster" is never an answer here)."""
-    labels = np.full(n, -1, dtype=np.int64)
-    if not rows:
-        return labels
-    root = n
-    birth: dict[int, float] = {root: 0.0}
-    children: dict[int, list[int]] = {}
-    for cluster, child, lam, _ in rows:
-        if child >= n:
-            birth[child] = lam
-            children.setdefault(cluster, []).append(child)
-    stability: dict[int, float] = dict.fromkeys(birth, 0.0)
-    for cluster, _, lam, count in rows:
-        stability[cluster] += (lam - birth[cluster]) * count
-
-    # Bottom-up: a child always has a larger id than its parent, so descending order is leaves-up.
-    selected = {c for c in stability if c != root}
-    for cluster in sorted(selected, reverse=True):
-        below = sum(stability[c] for c in children.get(cluster, ()))
-        if below > stability[cluster]:
-            selected.discard(cluster)
-            stability[cluster] = below  # the descendants' score propagates up in its place
-        else:
-            stack = list(children.get(cluster, ()))
-            while stack:  # this cluster wins, so nothing under it can also be a cluster
-                sub = stack.pop()
-                selected.discard(sub)
-                stack.extend(children.get(sub, ()))
-    if not selected:
-        return labels
-
-    label_of = {c: i for i, c in enumerate(sorted(selected))}
-    up = {child: cluster for cluster, child, _, _ in rows if child not in selected}
-    for point in range(n):
-        node = point
-        while node in up:
-            node = up[node]
-        if node in label_of:
-            labels[point] = label_of[node]
-    return labels
+    return _density.hdbscan_from_knn(indices, dists, core, min_cluster_size)
 
 
 @overload
@@ -821,16 +554,17 @@ def choose_k(
     ks = list(range(k_min, hi + 1))
 
     def _fit_inertia(k: int) -> float:
-        labels, centroids = _kmeans_core(work, k, n_iter=n_iter, random_state=random_state)
-        return _inertia(work, labels, centroids)
+        labels, centroids = _kmeans.kmeans_core(work, k, n_iter=n_iter, random_state=random_state)
+        return _kmeans.inertia(work, labels, centroids)
 
     if n_jobs == 1 or len(ks) == 1:
         inertias = [_fit_inertia(k) for k in ks]
     else:
         # The fits are embarrassingly parallel. Pin BLAS to one thread for the sweep so each fit is
-        # single-threaded and n_jobs of them run concurrently (the GEMM in _assign releases the
-        # GIL); this avoids the oversubscription that per-fit multi-threaded BLAS would cause.
-        # _kmeans_core carries no BLAS-cap decorator, so the threads never race on threadpool_limits.
+        # single-threaded and n_jobs of them run concurrently (the GEMM in _kmeans.assign releases
+        # the GIL); this avoids the oversubscription that per-fit multi-threaded BLAS would cause.
+        # _kmeans.kmeans_core carries no BLAS-cap decorator, so the threads never race on
+        # threadpool_limits.
         from concurrent.futures import ThreadPoolExecutor
 
         import threadpoolctl
@@ -865,52 +599,6 @@ def _elbow(ks: list[int], inertias: list[float]) -> int:
     return ks[int(np.argmax(ys - xs))]  # farthest above the y=x chord
 
 
-def _assign(x: FloatArray, centroids: FloatArray) -> IntArray:
-    """Nearest-centroid label per row, computed one block at a time (bounded memory)."""
-    n = x.shape[0]
-    c_sq = np.einsum("ij,ij->i", centroids, centroids)
-    labels = np.empty(n, dtype=np.int64)
-    for start in range(0, n, _BLOCK):
-        block = x[start : start + _BLOCK]
-        # argmin over ||b - c||^2 = ||b||^2 - 2 b.c + ||c||^2; the ||b||^2 term is constant per row.
-        d2 = c_sq[None, :] - 2.0 * (block @ centroids.T)
-        labels[start : start + _BLOCK] = np.argmin(d2, axis=1)
-    return labels
-
-
-def _assign_with_distances(x: FloatArray, centroids: FloatArray) -> tuple[IntArray, FloatArray]:
-    """Nearest-centroid label AND the distance to it, per row, one block at a time. Unlike
-    ``_assign`` this keeps the ``||b||^2`` term (it does not affect the argmin, but it is needed for
-    the actual distance a caller can threshold on)."""
-    n = x.shape[0]
-    c_sq = np.einsum("ij,ij->i", centroids, centroids)
-    labels = np.empty(n, dtype=np.int64)
-    nearest_d2 = np.empty(n, dtype=np.float64)
-    for start in range(0, n, _BLOCK):
-        block = x[start : start + _BLOCK]
-        b_sq = np.einsum("ij,ij->i", block, block)
-        d2 = b_sq[:, None] + c_sq[None, :] - 2.0 * (block @ centroids.T)
-        np.maximum(d2, 0.0, out=d2)  # clip negative round-off before the sqrt
-        idx = np.argmin(d2, axis=1)
-        labels[start : start + _BLOCK] = idx
-        nearest_d2[start : start + _BLOCK] = d2[np.arange(idx.shape[0]), idx]
-    return labels, np.sqrt(nearest_d2)
-
-
-def _centroids_from_labels(x: FloatArray, labels: IntArray, k: int) -> FloatArray:
-    """Per-cluster mean — the accel returns labels only, so recover centroids here."""
-    from scipy.sparse import csr_matrix  # lazy: keeps import light
-
-    n = x.shape[0]
-    counts = np.bincount(labels, minlength=k).astype(np.float64)
-    # One sparse (k, n) membership matrix times x: one pass over the data, not one per dimension.
-    member = csr_matrix((np.ones(n), (labels, np.arange(n))), shape=(k, n))
-    centroids = np.asarray(member @ x, dtype=np.float64)
-    nonempty = counts > 0
-    centroids[nonempty] /= counts[nonempty, None]
-    return centroids
-
-
 @with_blas_limit
 def kmeans(
     x: FloatArray,
@@ -932,7 +620,7 @@ def kmeans(
     centroids they land on, so per-iteration work drops from ``O(n*k*d)`` to ``O(batch*k*d)`` at a
     small cost in inertia.
 
-    - ``None`` (default) — mini-batch above ``_MINIBATCH_MIN`` rows, full Lloyd below. The switch
+    - ``None`` (default) — mini-batch above 200,000 rows, full Lloyd below. The switch
       is on ``n`` only, so the same input and seed give the same labels on any machine.
     - ``0`` — force full Lloyd at any size.
     - a positive int — force mini-batch with that batch size.
@@ -943,7 +631,7 @@ def kmeans(
     real embeddings produce (~1.01x), so the default stays a single fast run. If your data is
     well-separated, pass ``n_init=5`` to recover full-Lloyd parity. Runtime scales with ``n_init``.
     """
-    return _kmeans_core(
+    return _kmeans.kmeans_core(
         x,
         n_clusters,
         n_iter=n_iter,
@@ -951,97 +639,6 @@ def kmeans(
         batch_size=batch_size,
         n_init=n_init,
     )
-
-
-def _kmeans_core(
-    x: FloatArray,
-    n_clusters: int,
-    *,
-    n_iter: int = 50,
-    random_state: int = 42,
-    batch_size: int | None = None,
-    n_init: int | None = None,
-) -> tuple[IntArray, FloatArray]:
-    """k-means without the BLAS-cap decorator, so it can be called concurrently (e.g. from
-    choose_k's parallel sweep) under a cap the caller has already set, with no nested and
-    thread-unsafe re-entry into ``threadpool_limits``.
-
-    ``n_init`` runs the fit that many times from different seeds and keeps the lowest-inertia
-    result. ``None`` (default) is a single run: fast, and enough for full Lloyd and for mini-batch
-    on the overlapping data real embeddings produce. Raise it for the mini-batch path on
-    well-separated clusters, where its running-mean update can settle into a bad optimum a different
-    seed escapes (n_init=5 recovers full-Lloyd parity on the adversarial blobs). Deterministic: the
-    seeds are ``random_state + i`` and the best is chosen by inertia."""
-    if n_clusters < 1:
-        raise ValueError("n_clusters must be >= 1")
-    if n_init is not None and n_init < 1:
-        raise ValueError("n_init must be >= 1")
-    inits = 1 if n_init is None else n_init
-    if inits == 1:
-        return _kmeans_single(
-            x, n_clusters, n_iter=n_iter, random_state=random_state, batch_size=batch_size
-        )
-    best: tuple[IntArray, FloatArray] | None = None
-    best_inertia = float("inf")
-    for i in range(inits):
-        labels, centroids = _kmeans_single(
-            x, n_clusters, n_iter=n_iter, random_state=random_state + i, batch_size=batch_size
-        )
-        val = _inertia(x, labels, centroids)
-        if val < best_inertia:
-            best_inertia, best = val, (labels, centroids)
-    assert best is not None
-    return best
-
-
-def _kmeans_single(
-    x: FloatArray,
-    n_clusters: int,
-    *,
-    n_iter: int = 50,
-    random_state: int = 42,
-    batch_size: int | None = None,
-) -> tuple[IntArray, FloatArray]:
-    """One k-means fit on the native kernel: mini-batch above ``_MINIBATCH_MIN`` rows, else Lloyd."""
-    if n_clusters < 1:
-        raise ValueError("n_clusters must be >= 1")
-    if n_clusters > x.shape[0]:
-        raise ValueError(f"n_clusters={n_clusters} exceeds n={x.shape[0]}")
-    if batch_size is not None and batch_size < 0:
-        raise ValueError("batch_size must be >= 0 (0 forces full Lloyd, None picks by n)")
-    n = x.shape[0]
-    auto_minibatch = batch_size is None and n >= _MINIBATCH_MIN
-    if auto_minibatch or (batch_size or 0) > 0:
-        batch = _MINIBATCH_BATCH if batch_size in (None, 0) else batch_size
-        # Mini-batch trades an expensive pass for many cheap ones, so it wants more iterations
-        # than Lloyd. Only override a caller who left n_iter at its Lloyd default.
-        iters = _MINIBATCH_ITER if n_iter == 50 else n_iter
-        data = np.ascontiguousarray(x, dtype=np.float64)
-        labels = np.asarray(
-            _accel_minibatch(data, n_clusters, iters, int(batch), int(random_state)),
-            dtype=np.int64,
-        )
-        return _nearest_centroid_fit(data, labels, n_clusters)
-    # Always the native kernel, at any size. A size gate here cost callers seconds to a minute
-    # whenever a subsample or a dimension count put them under it (choose_k on 5,000 x 768 rows
-    # took 70 s), to save about 1 ms on tiny inputs (#29).
-    data = np.ascontiguousarray(x, dtype=np.float64)
-    labels = np.asarray(_accel_kmeans(data, n_clusters, n_iter, int(random_state)), dtype=np.int64)
-    return _nearest_centroid_fit(data, labels, n_clusters)
-
-
-def _nearest_centroid_fit(
-    data: FloatArray, labels: IntArray, n_clusters: int
-) -> tuple[IntArray, FloatArray]:
-    """Return centroids as the label means, and labels as the nearest of those centroids.
-
-    The kernel works in float32 and may stop before convergence, so a few of its labels are not
-    the nearest float64 centroid. One more assignment pass fixes that: the returned labels are
-    then exactly what ``assign_clusters`` gives for the returned centroids. The centroids are not
-    recomputed after it.
-    """
-    centroids = _centroids_from_labels(data, labels, n_clusters)
-    return _assign(data, centroids), centroids
 
 
 def _spectral(

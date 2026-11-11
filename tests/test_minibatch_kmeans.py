@@ -5,18 +5,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fastumap import clustering
+from fastumap import _kmeans
 from fastumap._types import FloatArray
 from fastumap.clustering import kmeans
 
-# The module-private helpers this file exercises. Same pattern as test_perf_invariants.py.
-_ACCEL_MINIBATCH = clustering._accel_minibatch  # pyright: ignore[reportPrivateUsage]
-_inertia = clustering._inertia  # pyright: ignore[reportPrivateUsage]
-_MINIBATCH_MIN: int = clustering._MINIBATCH_MIN  # pyright: ignore[reportPrivateUsage]
-
-pytestmark = pytest.mark.skipif(
-    _ACCEL_MINIBATCH is None, reason="mini-batch needs the native kernel (unbuilt checkout)"
-)
+# The k-means internals this file exercises. Same pattern as test_perf_invariants.py.
+_inertia = _kmeans.inertia
+_MINIBATCH_MIN: int = _kmeans.MINIBATCH_MIN
 
 
 def _blobs(n: int = 20_000, dim: int = 32, k: int = 16, seed: int = 0) -> FloatArray:

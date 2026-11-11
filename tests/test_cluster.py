@@ -259,18 +259,18 @@ def test_public_surface_is_importable() -> None:
 def test_wide_input_below_50k_rows_uses_accel(monkeypatch: pytest.MonkeyPatch) -> None:
     # 10k x 768 is 7.7M values, over _ACCEL_MIN_CELLS, so it must take the native kernel even
     # though n < _ACCEL_MIN. Numpy was ~3x slower at 24k x 768 on one core.
-    from fastumap import clustering
+    from fastumap import _kmeans
 
     pytest.importorskip("fastumap._accel")
     calls: list[int] = []
-    real = clustering._accel_kmeans  # pyright: ignore[reportPrivateUsage]
+    real = _kmeans._accel_kmeans  # pyright: ignore[reportPrivateUsage]
     assert real is not None
 
     def spy(data: np.ndarray, k: int, n_iter: int, seed: int) -> np.ndarray:
         calls.append(data.shape[0])
         return real(data, k, n_iter, seed)
 
-    monkeypatch.setattr(clustering, "_accel_kmeans", spy)
+    monkeypatch.setattr(_kmeans, "_accel_kmeans", spy)
     x, y = _blobs(n=10_000, d=768, k=5)
     labels = cluster(x, method="kmeans", n_clusters=5, random_state=0)
     assert calls == [10_000]

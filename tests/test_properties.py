@@ -12,11 +12,10 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
 
-import fastumap.clustering as clustering
 from fastumap import cluster, umap_project
-from fastumap._types import FloatArray
+from fastumap._types import FloatArray, unit_rows
 
-_UNIT_ROWS = clustering._unit_rows  # pyright: ignore[reportPrivateUsage]
+_UNIT_ROWS = unit_rows
 
 
 def _matrices(

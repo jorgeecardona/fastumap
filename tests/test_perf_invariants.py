@@ -15,13 +15,14 @@ import numpy as np
 import pytest
 
 import fastumap.clustering as clustering
+from fastumap import _kmeans
 from fastumap._types import FloatArray, IntArray
 
 # Pristine references captured at import, before any test patches them, so a spy always chains to
 # the real implementation regardless of what is currently installed on the module.
-_REAL_ASSIGN = clustering._assign  # pyright: ignore[reportPrivateUsage]
+_REAL_ASSIGN = _kmeans.assign
 _REAL_ARGMIN = np.argmin
-_BLOCK: int = clustering._BLOCK  # pyright: ignore[reportPrivateUsage]
+_BLOCK: int = _kmeans.BLOCK
 
 
 def _blobs(n: int, d: int, k: int, *, seed: int = 0, spread: float = 8.0) -> FloatArray:
@@ -41,7 +42,7 @@ def _count_assign_passes(x: FloatArray, k: int, monkeypatch: pytest.MonkeyPatch)
         calls += 1
         return _REAL_ASSIGN(x_, centroids)
 
-    monkeypatch.setattr(clustering, "_assign", counting_assign)
+    monkeypatch.setattr(_kmeans, "assign", counting_assign)
     clustering.kmeans(x, k, random_state=0)
     return calls
 
