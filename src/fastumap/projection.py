@@ -102,8 +102,8 @@ def _original_radius(work: FloatArray, graph: FuzzyGraph) -> FloatArray:
     return (ro - ro.mean()) / sd if sd > 0.0 else np.zeros_like(ro)
 
 
-def _pca_reduce(x: FloatArray, pca_dim: int) -> tuple[FloatArray, FloatArray, FloatArray]:
-    """Reduce ``x`` to ``pca_dim`` principal components (deterministic, exact SVD).
+def pca_reduce(x: FloatArray, pca_dim: int) -> tuple[FloatArray, FloatArray, FloatArray]:
+    """Reduce ``x`` to ``pca_dim`` principal components (deterministic, exact).
 
     The kNN cost is O(n^2 * d). At 1024-d that d dominates. Projecting onto the top ~100
     components first shrinks it ~10x with little quality loss. This works because encoder/CLS
@@ -112,8 +112,13 @@ def _pca_reduce(x: FloatArray, pca_dim: int) -> tuple[FloatArray, FloatArray, Fl
     """
     mean = np.ascontiguousarray(x.mean(axis=0))
     centered = x - mean
-    _u, _s, vt = np.linalg.svd(centered, full_matrices=False)
-    components = np.ascontiguousarray(vt[:pca_dim])  # (pca_dim, n_features)
+    # Eigendecomposition of the d-by-d scatter matrix, not an SVD of the n-by-d data: same
+    # components, several times cheaper when n >> d (24k x 768: SVD ~16 s on one core).
+    _w, v = np.linalg.eigh(centered.T @ centered)
+    components = v[:, ::-1][:, :pca_dim].T  # eigh sorts ascending; take the largest first
+    # Fix each component's sign (largest-magnitude entry positive) so the output is stable.
+    pivot = components[np.arange(components.shape[0]), np.abs(components).argmax(axis=1)]
+    components = np.ascontiguousarray(components * np.sign(pivot)[:, None])
     reduced = np.ascontiguousarray(centered @ components.T, dtype=np.float64)
     return reduced, mean, components
 
@@ -274,7 +279,7 @@ def fit(
         raise ValueError("pass either pca_dim or precomputed_knn, not both (pca moves the space)")
     work = x
     if pca_dim is not None and n_features > pca_dim:
-        work, pca_mean, pca_components = _pca_reduce(x, pca_dim)
+        work, pca_mean, pca_components = pca_reduce(x, pca_dim)
     k = min(n_neighbors, n)
 
     if precomputed_knn is not None:
@@ -579,7 +584,7 @@ def spectral_project(
     n, n_features = x.shape
     work = x
     if pca_dim is not None and n_features > pca_dim:
-        work, _mean, _components = _pca_reduce(x, pca_dim)
+        work, _mean, _components = pca_reduce(x, pca_dim)
     k = min(n_neighbors, n)
     knn_indices, knn_dists = knn_graph(work, k, metric=metric, mode=knn)
     graph = fuzzy_simplicial_set(knn_indices, knn_dists)

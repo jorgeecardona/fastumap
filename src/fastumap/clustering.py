@@ -44,6 +44,9 @@ from ._types import unit_rows as _unit_rows
 
 _BLOCK = 4096  # rows per block in the assignment step; bounds peak memory to block-by-k
 _ACCEL_MIN = 50_000  # below this the numpy path is fast and deterministic; above, use the accel
+# The numpy path cost grows with n*d, not n alone: 24k x 768 took 11.8 s on numpy vs 3.6 s on the
+# accel (one core). So wide inputs also use the accel. 6.4M cells = 50k rows x 128 dims.
+_ACCEL_MIN_CELLS = 6_400_000
 # Above this, full Lloyd's per-iteration O(n*k*d) pass is the wall on a small container, so the
 # default switches to mini-batch. Chosen by n ALONE, never by core count: gating on cores would
 # make the same input and seed give different labels on different machines, which is exactly the
@@ -158,6 +161,7 @@ def cluster(
     eps: float | None = ...,
     min_samples: int | None = ...,
     min_cluster_size: int = ...,
+    pca_dim: int | None = ...,
     return_centroids: Literal[False] = ...,
 ) -> IntArray: ...
 @overload
@@ -174,6 +178,7 @@ def cluster(
     eps: float | None = ...,
     min_samples: int | None = ...,
     min_cluster_size: int = ...,
+    pca_dim: int | None = ...,
     return_centroids: Literal[True],
 ) -> ClusterResult: ...
 @with_blas_limit
@@ -190,6 +195,7 @@ def cluster(
     eps: float | None = None,
     min_samples: int | None = None,
     min_cluster_size: int = 5,
+    pca_dim: int | None = None,
     return_centroids: bool = False,
 ) -> IntArray | ClusterResult:
     """Cluster ``embeddings`` ``(n, d)`` into integer labels ``(n,)``.
@@ -214,6 +220,13 @@ def cluster(
 
     With ``return_centroids=True`` the return is a :class:`ClusterResult` (labels, centroids,
     inertia) instead of just labels (``"kmeans"`` / ``"spectral"`` only).
+
+    ``pca_dim`` (default ``None`` = off) reduces the input to that many principal components
+    before clustering. The kNN and k-means cost grow with the dimension, so 768-d embeddings
+    reduced to 64 cluster several times faster. Only the labels come from the reduced space:
+    centroids, inertia and dispersion are still computed in the input space, so
+    ``assign_clusters`` keeps working on unreduced points. A ``pca_dim`` at or above the input
+    dimension does nothing.
     """
     x = np.ascontiguousarray(embeddings, dtype=np.float64)
     if x.ndim != 2:
@@ -221,6 +234,23 @@ def cluster(
     if metric not in ("euclidean", "cosine"):
         raise ValueError(f"unknown metric {metric!r}; use 'euclidean' or 'cosine'")
     work = _unit_rows(x) if metric == "cosine" else x
+    if pca_dim is not None and pca_dim < 1:
+        raise ValueError("pca_dim must be >= 1")
+    if pca_dim is not None and pca_dim < work.shape[1]:
+        return _cluster_reduced(
+            work,
+            pca_dim,
+            method=method,
+            n_clusters=n_clusters,
+            n_neighbors=n_neighbors,
+            n_iter=n_iter,
+            n_init=n_init,
+            random_state=random_state,
+            eps=eps,
+            min_samples=min_samples,
+            min_cluster_size=min_cluster_size,
+            return_centroids=return_centroids,
+        )
     if method in ("dbscan", "hdbscan"):
         if return_centroids:
             raise ValueError(
@@ -278,6 +308,54 @@ def cluster(
             labels, centroids, _inertia(work, labels, centroids), dispersion, sizes
         )
     return labels
+
+
+def _cluster_reduced(
+    work: FloatArray,
+    pca_dim: int,
+    *,
+    method: str,
+    n_clusters: int | None,
+    n_neighbors: int | None,
+    n_iter: int,
+    n_init: int | None,
+    random_state: int,
+    eps: float | None,
+    min_samples: int | None,
+    min_cluster_size: int,
+    return_centroids: bool,
+) -> IntArray | ClusterResult:
+    """``cluster`` on the top ``pca_dim`` principal components of ``work``.
+
+    Labels come from the reduced space. Centroids, inertia and dispersion are computed in the
+    space of ``work``, so ``assign_clusters`` works on unreduced points.
+    """
+    if return_centroids and method in ("dbscan", "hdbscan"):
+        raise ValueError(
+            f"return_centroids is not supported for method={method!r} (noise has no centroid)"
+        )
+    from .projection import pca_reduce  # lazy: keeps import light
+
+    reduced = pca_reduce(work, pca_dim)[0]
+    # Label in the reduced space, then report centroids in the input space.
+    labels = cluster(
+        reduced,
+        method=method,
+        n_clusters=n_clusters,
+        n_neighbors=n_neighbors,
+        n_iter=n_iter,
+        n_init=n_init,
+        random_state=random_state,
+        eps=eps,
+        min_samples=min_samples,
+        min_cluster_size=min_cluster_size,
+    )
+    if not return_centroids:
+        return labels
+    k = n_clusters if n_clusters is not None else int(labels.max()) + 1
+    centroids = _centroids_from_labels(work, labels, k)
+    dispersion, sizes = _dispersion_and_sizes(work, labels, centroids, k)
+    return ClusterResult(labels, centroids, _inertia(work, labels, centroids), dispersion, sizes)
 
 
 @overload
@@ -865,7 +943,8 @@ def kmeans(
 ) -> tuple[IntArray, FloatArray]:
     """Lloyd's k-means with k-means++ init. Returns ``(labels, centroids)``.
 
-    Uses the built-in native kernel (fastumap._accel) above ``_ACCEL_MIN`` points when present
+    Uses the built-in native kernel (fastumap._accel) above ``_ACCEL_MIN`` points, or above
+    ``_ACCEL_MIN_CELLS`` values (n times d) for wide inputs, when present
     (~10s at 1M x 128 vs minutes for numpy). Otherwise the pure-numpy path here, which is
     deterministic to the byte. Both converge to the same objective within the usual tolerance.
 
@@ -967,7 +1046,7 @@ def _kmeans_single(
             dtype=np.int64,
         )
         return labels, _centroids_from_labels(data, labels, n_clusters)
-    if _accel_kmeans is not None and n >= _ACCEL_MIN:
+    if _accel_kmeans is not None and (n >= _ACCEL_MIN or n * x.shape[1] >= _ACCEL_MIN_CELLS):
         data = np.ascontiguousarray(x, dtype=np.float64)
         labels = np.asarray(
             _accel_kmeans(data, n_clusters, n_iter, int(random_state)), dtype=np.int64

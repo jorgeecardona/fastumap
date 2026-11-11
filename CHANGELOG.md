@@ -5,6 +5,20 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.31] - 2026-11-11
+
+### Added
+- `pca_dim` on `cluster()`: find the clusters on the top principal components, then report
+  centroids, inertia and dispersion in the input space. Saved centroids work with
+  `assign_clusters` on unreduced points. k-means at 24k x 768, k=50, one core: 3.6 s to 1.9 s with
+  `pca_dim=64`.
+
+### Fixed
+- k-means now uses the native kernel for wide inputs below 50,000 rows (rows x dims >= 6.4M).
+  Before, 768-d embeddings under 50k rows always ran on the ~3-10x slower numpy path (#29).
+- PCA (`pca_dim` in `cluster` and `umap_project`) uses an eigendecomposition of the covariance
+  instead of an SVD of the data: 16 s to under 1 s at 24k x 768 on one core.
+
 ## [0.2.29] - 2026-08-27
 
 ### Added
