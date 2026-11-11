@@ -89,7 +89,7 @@ def assign_with_distances(x: FloatArray, centroids: FloatArray) -> tuple[IntArra
 
 
 def centroids_from_labels(x: FloatArray, labels: IntArray, k: int) -> FloatArray:
-    """Per-cluster mean — the accel returns labels only, so recover centroids here."""
+    """Per-cluster mean. The kernel returns labels only, so the centroids are computed here."""
     from scipy.sparse import csr_matrix  # lazy: keeps import light
 
     n = x.shape[0]
@@ -152,20 +152,18 @@ def kmeans_single(
     batch_size: int | None = None,
 ) -> tuple[IntArray, FloatArray]:
     """One k-means fit on the native kernel: mini-batch above ``MINIBATCH_MIN`` rows, else Lloyd."""
-    if n_clusters < 1:
-        raise ValueError("n_clusters must be >= 1")
     if n_clusters > x.shape[0]:
         raise ValueError(f"n_clusters={n_clusters} exceeds n={x.shape[0]}")
     if batch_size is not None and batch_size < 0:
         raise ValueError("batch_size must be >= 0 (0 forces full Lloyd, None picks by n)")
     n = x.shape[0]
+    data = np.ascontiguousarray(x, dtype=np.float64)
     auto_minibatch = batch_size is None and n >= MINIBATCH_MIN
     if auto_minibatch or (batch_size or 0) > 0:
         batch = MINIBATCH_BATCH if batch_size in (None, 0) else batch_size
         # Mini-batch trades an expensive pass for many cheap ones, so it wants more iterations
         # than Lloyd. Only override a caller who left n_iter at its Lloyd default.
         iters = MINIBATCH_ITER if n_iter == 50 else n_iter
-        data = np.ascontiguousarray(x, dtype=np.float64)
         labels = np.asarray(
             _accel_minibatch(data, n_clusters, iters, int(batch), int(random_state)),
             dtype=np.int64,
@@ -174,7 +172,6 @@ def kmeans_single(
     # Always the native kernel, at any size. A size gate here cost callers seconds to a minute
     # whenever a subsample or a dimension count put them under it (choose_k on 5,000 x 768 rows
     # took 70 s), to save about 1 ms on tiny inputs (#29).
-    data = np.ascontiguousarray(x, dtype=np.float64)
     labels = np.asarray(_accel_kmeans(data, n_clusters, n_iter, int(random_state)), dtype=np.int64)
     return nearest_centroid_fit(data, labels, n_clusters)
 

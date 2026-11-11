@@ -39,18 +39,13 @@ _accel_optimize = load_accel().optimize_layout
 
 
 def accelerator_active() -> bool:
-    """Whether the native ``fastumap._accel`` SGD kernel is present and will be used.
+    """Return ``True``: the native ``fastumap._accel`` kernel is required.
 
-    Always ``True`` for an importable fastumap: a missing extension makes ``import fastumap``'s
-    submodules raise ``ImportError`` instead of running without it.
-
-    The kernel does umap-learn's true in-place walk. So it produces a *different*
-    (higher-quality) layout than the numpy fallback for the same seed.
-
-    Use this to record which path produced a stored projection. The default path uses the
-    kernel whenever present; ``chunk_count > 1`` forces numpy.
+    A missing extension makes the import raise ``ImportError``, so a running fastumap always has
+    the kernel. Kept so existing callers keep working. Note that ``chunk_count > 1`` still runs
+    the numpy layout path, which gives a different layout for the same seed.
     """
-    return _accel_optimize is not None
+    return True
 
 
 _GRID_SPACING = 3.0

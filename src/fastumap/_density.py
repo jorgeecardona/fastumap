@@ -83,7 +83,7 @@ def _mutual_reachability_mst(
 ) -> list[tuple[float, int, int]]:
     """Kruskal over the kNN edges, weighted by mutual reachability. Returns exactly ``n - 1``
     edges ``(weight, a, b)`` ascending. The kNN graph can be disconnected, so whatever components
-    survive are joined at ``inf`` — a merge that costs infinite density, i.e. lambda 0."""
+    survive are joined at ``inf``, a merge that costs infinite density, i.e. lambda 0."""
     n, k = indices.shape
     src = np.repeat(np.arange(n, dtype=np.int64), k - 1)
     dst = np.ascontiguousarray(indices[:, 1:]).ravel()
@@ -193,7 +193,7 @@ def _labels_from_condensed(rows: list[tuple[int, int, float, int]], n: int) -> I
     """Score every cluster in the condensed tree by stability and keep the best non-overlapping
     set (excess of mass), then label each point by the deepest kept cluster above it.
 
-    Stability of a cluster is ``sum over its children of (lambda_leave - lambda_birth) * size`` —
+    Stability of a cluster is ``sum over its children of (lambda_leave - lambda_birth) * size``:
     how much density range it survives, weighted by how many points survive it. A cluster is kept
     only if it beats the total of its descendants; otherwise the descendants win. The root is
     never a cluster (it holds everything, so "one big cluster" is never an answer here)."""

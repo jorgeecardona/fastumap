@@ -7,22 +7,22 @@ Clustering does not need it.
 
 Four methods, all ours:
 
-- ``method="kmeans"`` — k-means (k-means++ seeding, Lloyd iterations, blocked assignment so the
+- ``method="kmeans"``: k-means (k-means++ seeding, Lloyd iterations, blocked assignment so the
   n-by-k distance matrix is never materialised). Fastest. You pick ``n_clusters``. Runs on the
   built-in native kernel (``fastumap._accel``) at every size: ~10 s at 1M x 128.
-- ``method="spectral"`` — spectral clustering. Build the fuzzy kNN graph. Take the leading
+- ``method="spectral"``: spectral clustering. Build the fuzzy kNN graph. Take the leading
   normalised-adjacency eigenvectors (fastumap's own spectral machinery). k-means those. Finds
   non-convex clusters k-means alone misses. Needs ``fastumap[ann]`` only above ~16k points, where
   the kNN switches to the approximate backend.
-- ``method="dbscan"`` — density clustering. Finds clusters of any shape, labels outliers ``-1``,
+- ``method="dbscan"``: density clustering. Finds clusters of any shape, labels outliers ``-1``,
   and picks the number of clusters itself. You give it ``eps`` (or let it auto-pick).
-- ``method="hdbscan"`` — the hierarchical version: no ``eps`` at all, so clusters of different
+- ``method="hdbscan"``: the hierarchical version: no ``eps`` at all, so clusters of different
   densities come out together. You give it ``min_cluster_size``. The usual choice after a UMAP
   reduction when you don't know k.
 
-Memory: the native kernel runs in float32, but the numpy entry points upcast the input to float64
-(``np.ascontiguousarray(..., dtype=np.float64)``) for the inertia. So on any path the float64 work array is the memory driver at large n: a
-1,000,000 x 1024 float32 input becomes an ~8 GB float64 array. The assignment step is blocked, so
+Memory: the native kernel runs in float32, but the entry points upcast the input to float64
+for the inertia. So the float64 work array is the memory driver at large n: a 1,000,000 x 1024
+float32 input becomes an ~8 GB float64 array. The assignment step is blocked, so
 the n-by-k distance matrix on top of that stays bounded by the block size, not by n.
 """
 
@@ -69,11 +69,11 @@ class ChooseKResult:
     """What ``choose_k(..., return_evidence=True)`` returns: the chosen ``k`` and the evidence for
     it, so a caller can publish why a k was picked rather than just the integer.
 
-    - ``candidates`` / ``inertias`` — the k-means objective at each candidate k (parallel lists).
+    - ``candidates`` / ``inertias``: the k-means objective at each candidate k (parallel lists).
       The chosen k is the elbow of this curve; a sharp knee is a stronger claim than a flat one.
-    - ``criterion`` — the selection rule, ``"inertia_elbow"`` (the kneedle knee). This is separate
+    - ``criterion``: the selection rule, ``"inertia_elbow"`` (the kneedle knee). This is separate
       from the distance ``metric``.
-    - ``n_samples`` — how many points the sweep actually ran on (``choose_k`` subsamples above
+    - ``n_samples``: how many points the sweep actually ran on (``choose_k`` subsamples above
       ``max_samples``); with ``n_iter`` and ``random_state`` it makes the choice reproducible from
       the result alone.
     """
@@ -442,7 +442,7 @@ def hdbscan(
     by stability (excess of mass) and the best non-overlapping set wins.
 
     ``min_cluster_size`` is the real knob: the smallest group you are willing to call a cluster.
-    ``min_samples`` (default: ``min_cluster_size``) sets how conservative the density estimate is —
+    ``min_samples`` (default: ``min_cluster_size``) sets how conservative the density estimate is:
     raise it to push more points into noise.
 
     One consequence to know before you call it: the root of the hierarchy is never a cluster, so
@@ -549,7 +549,7 @@ def choose_k(
         rng = np.random.default_rng(random_state)
         x = x[rng.choice(n, max_samples, replace=False)]
     # Normalise once for cosine (squared-L2 on unit rows), then every fit runs in euclidean space
-    # on the same array — matching cluster(metric=...) but without re-normalising per candidate.
+    # on the same array, matching cluster(metric=...) but without re-normalising per candidate.
     work = _unit_rows(x) if metric == "cosine" else x
     ks = list(range(k_min, hi + 1))
 
@@ -590,7 +590,7 @@ def choose_k(
 
 def _elbow(ks: list[int], inertias: list[float]) -> int:
     """Kneedle: normalise the (k, inertia) curve to the unit square and return the k whose point
-    sits farthest above the straight chord from first to last — the sharpest bend."""
+    sits farthest above the straight chord from first to last, the sharpest bend."""
     xs = np.asarray(ks, dtype=np.float64)
     ys = np.asarray(inertias, dtype=np.float64)
     xs = (xs - xs[0]) / (xs[-1] - xs[0])
@@ -620,10 +620,10 @@ def kmeans(
     centroids they land on, so per-iteration work drops from ``O(n*k*d)`` to ``O(batch*k*d)`` at a
     small cost in inertia.
 
-    - ``None`` (default) — mini-batch above 200,000 rows, full Lloyd below. The switch
+    - ``None`` (default): mini-batch above 200,000 rows, full Lloyd below. The switch
       is on ``n`` only, so the same input and seed give the same labels on any machine.
-    - ``0`` — force full Lloyd at any size.
-    - a positive int — force mini-batch with that batch size.
+    - ``0``: force full Lloyd at any size.
+    - a positive int: force mini-batch with that batch size.
 
     ``n_init`` restarts the fit from that many seeds and keeps the lowest-inertia result. ``None``
     (default) is a single run. Mini-batch can settle into a bad optimum on well-separated clusters
@@ -654,7 +654,7 @@ def _spectral(
     indices, dists = knn_graph(x, kk, metric=metric, mode="auto")
     graph = fuzzy_simplicial_set(indices, dists)
     v0 = np.full(n, 1.0 / np.sqrt(n), dtype=np.float64)
-    # Leading (k) eigenvectors of the normalised adjacency — the same routine spectral_layout
+    # Leading (k) eigenvectors of the normalised adjacency, the same routine spectral_layout
     # uses, asking for k components instead of the embedding dimension.
     _, vecs = _scipy.normalized_adjacency_eigenvectors(
         n, graph.head, graph.tail, graph.weight, k, v0
