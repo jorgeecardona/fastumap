@@ -5,6 +5,24 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-11
+
+This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34.
+
+### Changed
+- The compiled kernel (`fastumap._accel`) is required. Without it, import raises `ImportError`
+  with how to fix it. `accelerator_active()` now always returns `True`.
+- k-means always runs on the native kernel, at every input size.
+- k-means labels equal the nearest returned centroid: `assign_clusters` on the training rows
+  gives the same labels.
+- `cluster(pca_dim=...)` finds clusters in the PCA space, then labels every point by its nearest
+  input-space centroid.
+
+### Internal
+- `clustering.py` is split: k-means internals move to `_kmeans.py`, dbscan and hdbscan internals
+  to `_density.py`. No public name moved. Private names such as `fastumap.clustering._assign` are
+  gone.
+
 ## [0.2.34] - 2026-11-11
 
 ### Changed

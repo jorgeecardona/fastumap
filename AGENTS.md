@@ -12,14 +12,17 @@ so nothing is left to compile at import — import time is ~12 ms versus ~21 s f
 Architecture:
 
 - `src/fastumap/` — Python package. Core modules: `projection.py` (UMAP fit/transform),
-  `layout.py` (SGD), `neighbors.py` (kNN), `clustering.py` (k-means, spectral, dbscan, hdbscan),
+  `layout.py` (SGD), `neighbors.py` (kNN), `clustering.py` (public clustering API: `cluster`,
+  `kmeans`, `choose_k`, `assign_clusters`, `dbscan`, `hdbscan`), `_kmeans.py` (k-means kernel
+  calls, assignment, inertia), `_density.py` (dbscan and hdbscan from a kNN graph),
   `graph.py` (fuzzy simplicial set), `metrics.py`.
+- Tests patch k-means internals on `fastumap._kmeans`, never on `fastumap.clustering`.
 - `rust/` — Rust extension, `fastumap._accel`. Implements the SGD layout kernel and the k-means
   SIMD GEMM kernel. Built by maturin (the build backend in `pyproject.toml`) as an abi3 extension
   module and shipped in every prebuilt wheel. The extension is required: if it is absent (an
   unbuilt source checkout), importing `fastumap.layout` or `fastumap.clustering` raises
   `ImportError`. There is no silent numpy fallback.
-- `fastumap._accel` is the module name; `fastumap.accelerator_active()` reports whether it is live.
+- `fastumap._accel` is the module name. `fastumap.accelerator_active()` always returns `True`.
 - Lazy imports are intentional (they protect the fast cold start); do not hoist them to the top
   of a module.
 
