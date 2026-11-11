@@ -51,3 +51,15 @@ def test_pca_dim_rejects_bad_values() -> None:
         cluster(x, n_clusters=4, pca_dim=0)
     with pytest.raises(ValueError, match="return_centroids"):
         cluster(x, method="hdbscan", pca_dim=16, return_centroids=True)
+
+
+@pytest.mark.parametrize("method", ["kmeans", "spectral"])
+def test_pca_dim_labels_match_full_space_assignment(method: str) -> None:
+    # At pca_dim=2 many points sit on the wrong side of a full-space boundary; the returned labels
+    # must still be what assign_clusters gives for the returned centroids.
+    rng = np.random.default_rng(1)
+    x = rng.standard_normal((800, 60))
+    result = cluster(x, method=method, n_clusters=8, pca_dim=2, return_centroids=True)
+    assert np.array_equal(assign_clusters(x, result.centroids), result.labels)
+    labels_only = cluster(x, method=method, n_clusters=8, pca_dim=2)
+    assert np.array_equal(labels_only, result.labels)
