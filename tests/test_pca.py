@@ -39,8 +39,18 @@ def test_pca_reduced_is_deterministic_and_finite() -> None:
 def test_pca_preserves_overlap_on_low_rank_data() -> None:
     # 8 clusters in 128 dims => low intrinsic rank; reducing to 32 keeps the structure.
     x, _ = gaussian_clusters(n=400, dim=128, seed=2)
-    full = neighbor_overlap(x, umap_project(x, 2, random_state=0, n_epochs=150), 15)
-    reduced = neighbor_overlap(x, umap_project(x, 2, random_state=0, n_epochs=150, pca_dim=32), 15)
+    # Mean over 3 seeds: one seed's gap swings between -0.03 and +0.02 with float rounding
+    # (CI on Python 3.14 failed at -0.032 on seed 0 alone).
+    seeds = range(3)
+    full = np.mean(
+        [neighbor_overlap(x, umap_project(x, 2, random_state=s, n_epochs=150), 15) for s in seeds]
+    )
+    reduced = np.mean(
+        [
+            neighbor_overlap(x, umap_project(x, 2, random_state=s, n_epochs=150, pca_dim=32), 15)
+            for s in seeds
+        ]
+    )
     assert reduced > full - 0.03
 
 
