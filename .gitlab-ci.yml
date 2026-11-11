@@ -165,7 +165,13 @@ nightly:
 wheels-windows:
   tags:
     - saas-windows-medium-amd64
-  needs: []
+  # After ci: publish only once the tests passed and the Linux wheels + sdist are on PyPI.
+  # Publishing in parallel shipped 0.2.31 as Windows-only (tests failed) and made 0.2.33 look
+  # released before its Linux files existed (#29).
+  # artifacts: false keeps the Linux wheels out of this job's dist/.
+  needs:
+    - job: ci
+      artifacts: false
   allow_failure: true
   #
   # Only when pyproject.toml changed, i.e. on a release. MEASURED: this job takes ~10.5 min per
@@ -222,7 +228,9 @@ wheels-macos:
   tags:
     - saas-macos-medium-m1
   image: macos-15-xcode-16
-  needs: []
+  needs:  # after ci, same reason as wheels-windows
+    - job: ci
+      artifacts: false
   allow_failure: true
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"

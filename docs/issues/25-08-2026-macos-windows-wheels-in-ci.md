@@ -1,6 +1,7 @@
 ---
 title: macOS + Windows wheels in CI
-status: in-progress
+status: done
+fixed_in: 0.2.33
 area: production
 owner: bronze-sentinel-79061
 filed: 2026-08-25
@@ -96,3 +97,9 @@ hosted macOS runners are available. Added the `wheels-macos` job (`saas-macos-me
 `.github/workflows/macos-wheels.yml`, since no GitHub mirror is needed.
 
 Still OPEN until PyPI shows a `macosx_*` wheel.
+
+## Done 2026-11-11
+
+INSPECTED on PyPI, 0.2.33: `macosx_11_0_arm64` and `macosx_11_0_x86_64` abi3 wheels, the arm64 one
+contains `fastumap/_accel.abi3.so`. `wheels-macos` and `wheels-windows` now run after `ci`
+(`needs: ci`), so a platform wheel is never published before the tests pass and the Linux files exist.
