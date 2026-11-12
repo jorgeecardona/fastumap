@@ -29,6 +29,7 @@ the n-by-k distance matrix on top of that stays bounded by the block size, not b
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Literal, overload
 
 import numpy as np
@@ -71,11 +72,15 @@ class ChooseKResult:
 
     - ``candidates`` / ``inertias``: the k-means objective at each candidate k (parallel lists).
       The chosen k is the elbow of this curve; a sharp knee is a stronger claim than a flat one.
-    - ``criterion``: the selection rule, ``"inertia_elbow"`` (the kneedle knee). This is separate
+    - ``criterion``: the selection rule, ``"log_inertia_elbow"`` (the kneedle knee on log inertia). This is separate
       from the distance ``metric``.
     - ``n_samples``: how many points the sweep actually ran on (``choose_k`` subsamples above
       ``max_samples``); with ``n_iter`` and ``random_state`` it makes the choice reproducible from
       the result alone.
+    - ``n_init``: k-means starts per candidate; the lowest inertia is kept.
+    - ``inertia_rises``: how many candidates have a higher inertia than the candidate before. At
+      the optimum inertia never rises with k, so a value above 0 means a fit failed and the elbow
+      is less reliable. Raise ``n_init`` (#30).
     """
 
     k: int
@@ -84,7 +89,9 @@ class ChooseKResult:
     n_samples: int
     n_iter: int
     random_state: int
-    criterion: str = "inertia_elbow"
+    criterion: str = "log_inertia_elbow"
+    n_init: int = 1
+    inertia_rises: int = 0
 
 
 @overload
@@ -489,6 +496,7 @@ def choose_k(
     random_state: int = ...,
     max_samples: int = ...,
     n_jobs: int = ...,
+    n_init: int | None = ...,
     return_evidence: Literal[False] = ...,
 ) -> int: ...
 @overload
@@ -502,6 +510,7 @@ def choose_k(
     random_state: int = ...,
     max_samples: int = ...,
     n_jobs: int = ...,
+    n_init: int | None = ...,
     return_evidence: Literal[True],
 ) -> ChooseKResult: ...
 @with_blas_limit
@@ -515,6 +524,7 @@ def choose_k(
     random_state: int = 42,
     max_samples: int = 20_000,
     n_jobs: int = 1,
+    n_init: int | None = None,
     return_evidence: bool = False,
 ) -> int | ChooseKResult:
     """Pick ``n_clusters`` automatically by the inertia elbow, the selection criterion here. It is
@@ -530,6 +540,9 @@ def choose_k(
     result is identical to ``n_jobs=1``. ``return_evidence=True`` returns a :class:`ChooseKResult`
     (the chosen k plus the per-candidate inertias and the sample size) instead of the bare int, so
     a caller can publish the evidence behind the choice.
+
+    ``n_init`` runs that many k-means starts per candidate and keeps the lowest inertia, as in
+    ``kmeans``. ``None`` (default) is one start. The cost grows linearly with it.
 
     It is a heuristic. For a clear cluster structure it lands on the true k give or take one. For
     gradual structure, treat it as a starting point.
@@ -554,7 +567,9 @@ def choose_k(
     ks = list(range(k_min, hi + 1))
 
     def _fit_inertia(k: int) -> float:
-        labels, centroids = _kmeans.kmeans_core(work, k, n_iter=n_iter, random_state=random_state)
+        labels, centroids = _kmeans.kmeans_core(
+            work, k, n_iter=n_iter, random_state=random_state, n_init=n_init
+        )
         return _kmeans.inertia(work, labels, centroids)
 
     if n_jobs == 1 or len(ks) == 1:
@@ -584,15 +599,20 @@ def choose_k(
             n_samples=work.shape[0],
             n_iter=n_iter,
             random_state=random_state,
+            n_init=1 if n_init is None else n_init,
+            inertia_rises=sum(b > a for a, b in pairwise(inertias)),
         )
     return best
 
 
 def _elbow(ks: list[int], inertias: list[float]) -> int:
-    """Kneedle: normalise the (k, inertia) curve to the unit square and return the k whose point
-    sits farthest above the straight chord from first to last, the sharpest bend."""
+    """Kneedle on log inertia: return the k farthest above the chord of the normalised curve.
+
+    The log scale measures each drop relative to the current inertia. On raw inertia a run of
+    large early drops looks linear and hides the real knee (7 planted blobs gave k=5) (#30).
+    """
     xs = np.asarray(ks, dtype=np.float64)
-    ys = np.asarray(inertias, dtype=np.float64)
+    ys = np.log(np.maximum(np.asarray(inertias, dtype=np.float64), np.finfo(np.float64).tiny))
     xs = (xs - xs[0]) / (xs[-1] - xs[0])
     span = float(ys[0] - ys[-1])
     ys = (ys[0] - ys) / (span if span > 0.0 else 1.0)  # decreasing inertia -> increasing 0..1

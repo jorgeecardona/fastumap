@@ -42,26 +42,21 @@ def test_minibatch_matches_lloyd_on_overlapping_data() -> None:
     assert mb <= ll * 1.05
 
 
-def test_minibatch_struggles_on_well_separated_blobs_but_n_init_recovers() -> None:
-    """The known weakness AND its remedy.
+def test_minibatch_matches_lloyd_on_well_separated_blobs() -> None:
+    """Mini-batch reaches full-Lloyd inertia on well-separated blobs, and n_init keeps it there.
 
-    On perfectly separated blobs a centroid that drifts into a neighbour's blob can never walk
-    back — the running-mean update has no force pulling it across an empty gap, while Lloyd's
-    recompute-from-scratch does. MEASURED: 4.8x worse inertia on 20000x32 with 16 blobs 8 sigma
-    apart at the default single init. A different seed escapes that optimum, so n_init (keep the
-    lowest-inertia of several restarts) recovers full-Lloyd parity — n_init=5 here. Real data does
-    not look like this (MNIST lands at 1.013x), so the default stays a single fast run.
+    With plain k-means++ seeding, mini-batch was 4.8x worse here (20000x32, 16 blobs 8 sigma
+    apart): a centroid seeded in a neighbour's blob could not walk back. Greedy k-means++ seeding
+    (#30) no longer puts two seeds in one blob, so the single default run already matches Lloyd.
     """
     x = _blobs()
     ll_labels, ll_centroids = kmeans(x, 16, batch_size=0)
     ll = _inertia(x, ll_labels, ll_centroids)
 
-    # default (single init) still struggles: a record of the gap's existence
     mb_labels, mb_centroids = kmeans(x, 16, batch_size=2000)
-    assert _inertia(x, mb_labels, mb_centroids) > ll
-    assert len(set(mb_labels.tolist())) == 16  # it still fills every cluster
+    assert _inertia(x, mb_labels, mb_centroids) <= ll * 1.05
+    assert len(set(mb_labels.tolist())) == 16
 
-    # n_init is the remedy: restarts from other seeds recover parity with full Lloyd
     r_labels, r_centroids = kmeans(x, 16, batch_size=2000, n_init=5)
     assert _inertia(x, r_labels, r_centroids) <= ll * 1.05
 

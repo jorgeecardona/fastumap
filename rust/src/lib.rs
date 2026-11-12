@@ -198,6 +198,12 @@ fn kmeanspp_seed(x: &[f32], n: usize, dim: usize, k: usize, rng: &mut u64) -> Ve
         .into_par_iter()
         .map(|i| dist2(&sx[i * dim..i * dim + dim], &centroids[0..dim]))
         .collect();
+    // Greedy k-means++ (Arthur & Vassilvitskii 2007, scikit-learn's default): draw `trials`
+    // candidates per step and keep the one that lowers the total squared distance most. Plain
+    // k-means++ (one draw) often puts two seeds in one cluster on high-dimensional data, where
+    // between-cluster and within-cluster distances are close; that start is a local optimum that
+    // makes choose_k's inertia curve rise with k (#30).
+    let trials = 2 + (k as f64).ln() as usize;
     for c in 1..k {
         // Sequential f64 sum, not a parallel f32 reduce: this total feeds a threshold walk that
         // picks a discrete seed index, so an order-dependent low-order-bit change (which a parallel
@@ -205,28 +211,40 @@ fn kmeanspp_seed(x: &[f32], n: usize, dim: usize, k: usize, rng: &mut u64) -> Ve
         // different seed on a different machine and diverge the entire run. A fixed-order f64 sum
         // is thread-count-independent, and the walk below accumulates in f64 to match it.
         let total: f64 = closest.iter().map(|&d| d as f64).sum();
-        let target = (splitmix64(rng) as f64 / u64::MAX as f64) * total;
-        let mut chosen = sn - 1;
-        if total > 0.0 {
-            let mut acc = 0.0f64;
-            for (i, &d2) in closest.iter().enumerate() {
-                acc += d2 as f64;
-                if acc >= target {
-                    chosen = i;
-                    break;
+        let mut best: Option<(f64, usize, Vec<f32>)> = None;
+        for _ in 0..trials {
+            let target = (splitmix64(rng) as f64 / u64::MAX as f64) * total;
+            let mut chosen = sn - 1;
+            if total > 0.0 {
+                let mut acc = 0.0f64;
+                for (i, &d2) in closest.iter().enumerate() {
+                    acc += d2 as f64;
+                    if acc >= target {
+                        chosen = i;
+                        break;
+                    }
                 }
+            } else {
+                chosen = (splitmix64(rng) % sn as u64) as usize;
             }
-        } else {
-            chosen = (splitmix64(rng) % sn as u64) as usize;
+            let cand = &sx[chosen * dim..chosen * dim + dim];
+            let new_closest: Vec<f32> = (0..sn)
+                .into_par_iter()
+                .map(|i| dist2(&sx[i * dim..i * dim + dim], cand).min(closest[i]))
+                .collect();
+            // Fixed-order f64 sum again, so the winner is the same at any thread count.
+            let potential: f64 = new_closest.iter().map(|&d| d as f64).sum();
+            let better = match &best {
+                None => true,
+                Some((p, idx, _)) => potential < *p || (potential == *p && chosen < *idx),
+            };
+            if better {
+                best = Some((potential, chosen, new_closest));
+            }
         }
+        let (_, chosen, new_closest) = best.expect("trials >= 2");
         centroids[c * dim..c * dim + dim].copy_from_slice(&sx[chosen * dim..chosen * dim + dim]);
-        let cen = centroids[c * dim..c * dim + dim].to_vec();
-        closest.par_iter_mut().enumerate().for_each(|(i, cl)| {
-            let d2 = dist2(&sx[i * dim..i * dim + dim], &cen);
-            if d2 < *cl {
-                *cl = d2;
-            }
-        });
+        closest = new_closest;
     }
     centroids
 }
@@ -317,9 +335,6 @@ fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u
         // (a handful always flip), so allow a 0.1% tolerance — real data stops well before n_iter.
         let changed = next.iter().zip(labels.iter()).filter(|(a, b)| a != b).count();
         labels = next;
-        if changed <= n / 1000 {
-            break;
-        }
         // Centroid means as a parallel fold-reduce: each thread accumulates its own (sums,
         // counts), then they're merged — avoids a data race on shared centroids.
         //
@@ -356,6 +371,12 @@ fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u
                     (s1, c1)
                 },
             );
+        let empty: Vec<usize> = (0..k).filter(|&c| counts[c] == 0).collect();
+        // Stop only when labels are stable AND every cluster has points. An empty cluster left in
+        // place makes inertia rise with k, so choose_k's elbow follows the seed (#30).
+        if changed <= n / 1000 && empty.is_empty() {
+            break;
+        }
         for c in 0..k {
             if counts[c] > 0 {
                 let inv = 1.0f64 / counts[c] as f64;
@@ -364,8 +385,40 @@ fn kmeans_impl(x: &[f32], n: usize, dim: usize, k: usize, n_iter: usize, seed: u
                 }
             }
         }
+        if !empty.is_empty() {
+            reseed_empty(x, dim, &labels, &mut centroids, &empty);
+        }
     }
     labels
+}
+
+/// Move each empty centroid onto a point far from its own centroid.
+///
+/// The standard Lloyd repair (scikit-learn does the same): the points worst served by the current
+/// centroids become the new ones. Picks the `empty.len()` points with the largest squared distance
+/// to their assigned centroid, ties broken by the lower index, so it is deterministic.
+fn reseed_empty(x: &[f32], dim: usize, labels: &[i64], centroids: &mut [f32], empty: &[usize]) {
+    let n = labels.len();
+    let dist: Vec<f64> = (0..n)
+        .into_par_iter()
+        .map(|i| {
+            let c = labels[i] as usize;
+            let xi = &x[i * dim..i * dim + dim];
+            let ci = &centroids[c * dim..c * dim + dim];
+            let mut s = 0.0f64;
+            for d in 0..dim {
+                let diff = (xi[d] - ci[d]) as f64;
+                s += diff * diff;
+            }
+            s
+        })
+        .collect();
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&a, &b| dist[b].total_cmp(&dist[a]).then(a.cmp(&b)));
+    for (slot, &c) in empty.iter().enumerate() {
+        let i = order[slot.min(n - 1)];
+        centroids[c * dim..c * dim + dim].copy_from_slice(&x[i * dim..i * dim + dim]);
+    }
 }
 
 /// Mini-batch k-means (Sculley 2010), for when CPU is the constraint rather than memory.

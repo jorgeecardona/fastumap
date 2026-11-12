@@ -5,6 +5,26 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-12
+
+### Fixed
+- `choose_k` returns the same k at every `random_state` on high-dimensional data. On 20,000 x 768
+  embeddings with 7 planted clusters it returned 7, 10 or 9 by seed; now 7 at all three (#30).
+  Three causes, all fixed:
+  - k-means left a cluster empty when it lost all its points. It now moves that centroid to the
+    point farthest from its own centroid, so every cluster is used.
+  - k-means++ seeding draws 2 + ln(k) candidates per step and keeps the best (greedy k-means++,
+    scikit-learn's default). Plain k-means++ often seeded two centroids in one cluster.
+  - The elbow is found on log inertia. On raw inertia, 7 well-separated blobs gave k=5.
+- Mini-batch k-means on well-separated clusters now matches full Lloyd (was 4.8x worse).
+
+### Added
+- `choose_k(n_init=...)`: k-means starts per candidate. `ChooseKResult.inertia_rises` counts
+  candidates whose inertia is higher than the one before; above 0 means a fit failed.
+
+### Changed
+- `ChooseKResult.criterion` is now `"log_inertia_elbow"` (was `"inertia_elbow"`).
+
 ## [0.3.0] - 2026-11-11
 
 This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34.

@@ -102,7 +102,7 @@ Further options:
 
 - `return_centroids=True` returns a `ClusterResult(labels, centroids, inertia)` instead of labels
   alone, which is what is needed to compare runs or choose k.
-- `choose_k(x, k_min=2, k_max=10)` selects `n_clusters` by the inertia elbow. It is a heuristic;
+- `choose_k(x, k_min=2, k_max=10)` selects `n_clusters` by the elbow of the log-inertia curve. It is a heuristic;
   it lands on the true k give or take one when the clusters are clear.
 - `assign_clusters(x_new, centroids)` labels new points against already-fitted centroids, without
   re-clustering.

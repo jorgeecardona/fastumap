@@ -187,4 +187,9 @@ def nearest_centroid_fit(
     recomputed after it.
     """
     centroids = centroids_from_labels(data, labels, n_clusters)
-    return assign(data, centroids), centroids
+    used = np.bincount(labels, minlength=n_clusters) > 0
+    if used.all():
+        return assign(data, centroids), centroids
+    # An empty cluster has no mean; its all-zero centroid must not attract points (#30).
+    kept = np.flatnonzero(used)
+    return kept[assign(data, centroids[kept])], centroids

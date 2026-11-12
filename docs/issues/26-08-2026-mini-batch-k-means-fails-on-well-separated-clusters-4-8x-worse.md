@@ -1,6 +1,7 @@
 ---
 title: Mini-batch k-means fails on well-separated clusters (4.8x worse inertia)
-status: open
+status: done
+fixed_in: 0.3.1
 area: capability
 owner: null
 filed: 2026-08-26
@@ -66,3 +67,8 @@ but multiply mini-batch runtime by 5x on EVERY call, including the common case (
 already ~1.01x, so they would pay 5x for no gain, and mini-batch exists to be fast on constrained
 CPU). The decision — keep the fast opt-in default, or change the default and revise "Done when" — is
 Jorge's. MNIST/SIFT1M ratios are unchanged (default path untouched).
+## Done 2026-11-12
+
+Fixed by greedy k-means++ seeding in the Rust kernel (#30). On the same 20000x32, 16-blob data the
+default single mini-batch run now reaches full-Lloyd inertia. Pinned by
+`test_minibatch_matches_lloyd_on_well_separated_blobs`.

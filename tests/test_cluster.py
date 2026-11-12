@@ -189,7 +189,7 @@ def test_choose_k_return_evidence() -> None:
     assert ev.k == choose_k(x, k_min=2, k_max=10, random_state=0)  # same k as the bare call
     assert ev.candidates == list(range(2, 11))
     assert len(ev.inertias) == len(ev.candidates)
-    assert ev.criterion == "inertia_elbow"
+    assert ev.criterion == "log_inertia_elbow"
     assert ev.n_samples == 1200  # below max_samples, so every point is used
     assert ev.inertias[0] > ev.inertias[-1]  # inertia falls as k grows
 
