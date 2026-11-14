@@ -1,21 +1,30 @@
 # fastumap
 
+[![pipeline status](https://gitlab.com/cardona-oss/fastumap/badges/main/pipeline.svg)](https://gitlab.com/cardona-oss/fastumap/-/pipelines)
+[![PyPI version](https://img.shields.io/pypi/v/fastumap.svg)](https://pypi.org/project/fastumap/)
+[![Python versions](https://img.shields.io/pypi/pyversions/fastumap.svg)](https://pypi.org/project/fastumap/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://gitlab.com/cardona-oss/fastumap/-/blob/main/LICENSE)
+
+[Documentation](https://cardona-oss.gitlab.io/fastumap/) · [Source](https://gitlab.com/cardona-oss/fastumap)
+
 <!-- --8<-- [start:pitch] -->
 A UMAP and clustering library for environments where a JIT compiler at import time is not
 acceptable: serverless functions, small or CPU-limited containers, and autoscaled workers that pay
 a cold start on every new process.
 
-umap-learn compiles its kernels with numba and LLVM the first time the package is imported. That
-costs seconds on a workstation and minutes on a CPU-throttled container, and it recurs on every
-cold start rather than once per machine. NumPy and SciPy are equally compiled code, but they ship
-their machine code prebuilt in the wheel, so they load immediately. fastumap reimplements the UMAP
-algorithm on top of them, with precompiled Rust kernels (also shipped in the wheel) for the parts
-that need to be fast. Nothing is left to compile at import.
-
 | | cold import | added to image |
 |---|---:|---:|
 | `import umap` (umap-learn) | ~21 s | ~172 MB |
 | `import fastumap` | ~12 ms | 0 MB |
+
+umap-learn compiles its kernels with numba and LLVM the first time the package is imported. That
+costs seconds on a workstation and minutes on a CPU-throttled container, and it recurs on every
+cold start rather than once per machine.
+
+NumPy and SciPy are equally compiled code, but they ship their machine code prebuilt in the wheel,
+so they load immediately. fastumap reimplements the UMAP algorithm on top of them, with
+precompiled Rust kernels (also shipped in the wheel) for the parts that need to be fast. Nothing
+is left to compile at import.
 
 Projection quality stays within 0.01 neighbour overlap of umap-learn; the measurements are below.
 
@@ -33,7 +42,10 @@ pip install fastumap[ann]            # adds an approximate kNN backend for large
 <!-- --8<-- [start:usage] -->
 
 ```python
+import numpy as np
 from fastumap import umap_project, spectral_project
+
+x = np.random.default_rng(0).normal(size=(1000, 50))
 
 xy  = umap_project(x, 2)                     # (n, 2)
 xyz = umap_project(x, 3)                     # (n, 3)

@@ -5,6 +5,11 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-14
+
+### Changed
+- The PyPI page shows the import-time table first, and the usage example runs as written.
+
 ## [0.3.1] - 2026-11-12
 
 ### Fixed
