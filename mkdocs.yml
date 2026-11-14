@@ -7,7 +7,7 @@
 # (`--8<-- "README.md:section"`), so the README stays the single source of truth and the site can
 # never drift from it. The pages add navigation, framing and cross-links, not duplicated prose.
 site_name: fastumap
-site_description: UMAP and clustering with no JIT at import, for serverless and CPU-limited containers.
+site_description: "UMAP and clustering with no JIT at import, for serverless and CPU-limited containers"
 # The project has GitLab's unique-domain Pages enabled, so the site is served from this
 # generated hostname, not the path-based cardona-oss.gitlab.io/fastumap/.
 site_url: https://fastumap-942a24.gitlab.io/
@@ -70,6 +70,22 @@ plugins:
             members_order: source
             separate_signature: true
             show_signature_annotations: true
+  - llmstxt:
+      markdown_description: "fastumap reimplements UMAP on NumPy and SciPy with precompiled Rust kernels shipped in the wheel, so nothing is compiled at import time."
+      full_output: llms-full.txt
+      sections:
+        Usage documentation:
+          - index.md
+          - projection.md
+          - clustering.md
+          - server.md
+          - performance.md
+          - large-inputs.md
+          - accelerator.md
+          - benchmarks.md
+          - guarantees.md
+        API reference:
+          - api.md
 
 markdown_extensions:
   - admonition

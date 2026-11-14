@@ -55,6 +55,7 @@ docs = [
     "mkdocs>=1.6",
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.27",
+    "mkdocs-llmstxt>=0.5",
     # mkdocstrings formats generated signatures with ruff if it is present; without it the API
     # page prints them on one unwrapped line.
     "ruff>=0.6",
