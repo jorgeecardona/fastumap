@@ -237,6 +237,10 @@ model = UMAPModel.from_npz("layout.npz")
 - `init=previous` is an alternative: `umap_project(window, 2, init=previous)` reuses the previous
   coordinates so carried-over points start where they were, and new rows are placed by the caller.
   It refreshes a view without the fit/transform split.
+  `init` sets where the optimiser starts, not where it ends. At the default `n_epochs` a warm
+  start moves points almost as far as a cold one. To keep a refreshed view close to the previous
+  one, also pass a smaller `n_epochs` or a lower `initial_alpha` (600 points: 50 epochs held
+  stationary points 6.4× closer than moved points, 500 epochs 1.2×) (#16).
 
 A cached 5000×1024 model is about 20 MB, with training data stored as float32. Rolling windows and
 sparse input are not supported: densify sparse input first, and refit when the window slides.

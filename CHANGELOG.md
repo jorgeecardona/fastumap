@@ -5,6 +5,10 @@ All notable changes to fastumap are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- The README says that `init` sets where the optimiser starts, not where it ends, and that a refreshed
+  view also needs a smaller `n_epochs` or a lower `initial_alpha` (#16).
+
 ## [0.3.2] - 2026-11-14
 
 ### Changed
