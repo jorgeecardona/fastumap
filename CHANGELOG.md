@@ -264,7 +264,7 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 ## [0.2.18] - 2026-08-26
 
 ### Added
-- **Windows x86_64 wheel.** `pip install fastumap` on Windows no longer needs a Rust toolchain —
+- **Windows x86_64 wheel.** `pip install fastumap` on Windows no longer needs a Rust toolchain:
   it gets a prebuilt `cp311-abi3-win_amd64` wheel like every other supported platform. Built by a
   new `wheels-windows` CI job on GitLab's hosted Windows runner, which is available on the Free
   plan at cost factor 1; no GitHub Actions mirror was needed. VERIFIED on the PyPI files list for
@@ -277,8 +277,8 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 
 ### Known gaps
 - Still no macOS wheel. GitLab's hosted macOS runners are Premium/Ultimate only and this namespace
-  is Free, so it is an account-plan decision rather than a CI problem. The two paths — the GitLab
-  for Open Source program, or a GitHub Actions mirror for that one wheel — are written up in
+  is Free, so it is an account-plan decision rather than a CI problem. The two paths (the GitLab
+  for Open Source program, or a GitHub Actions mirror for that one wheel) are written up in
   `docs/issues/25-08-2026-macos-windows-wheels-in-ci.md`.
 
 ## [0.2.17] - 2026-08-26
@@ -290,7 +290,7 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
   `O(batch*k*d)`. It engages automatically above 200,000 rows.
 
   MEASURED on SIFT1M (1,000,000 x 128, k=64) inside a `docker --cpus=2` container: **5.2 s against
-  full Lloyd's 25.3 s, at 1.010x the inertia** — 4.9x faster for a 1% worse objective, clearing the
+  full Lloyd's 25.3 s, at 1.010x the inertia**: 4.9x faster for a 1% worse objective, clearing the
   roadmap's bar of under 10 s within ~5%. On MNIST 60000x784 it lands at 1.013x Lloyd.
 
   The switch is on `n` **alone, never on core count**, so the same input and seed give the same
@@ -301,7 +301,7 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
   can leave two centroids inside one group and none in another (measured 4.8x worse inertia on
   synthetic blobs 8 sigma apart), because the running-mean update cannot walk a centroid back
   across an empty gap the way Lloyd's recompute can. Real, overlapping data does not trigger it.
-- `make minibatch-1m` (`bench/minibatch_1m.sh` + `bench/minibatch_1m.py`) — the probe behind those
+- `make minibatch-1m` (`bench/minibatch_1m.sh` + `bench/minibatch_1m.py`): the probe behind those
   numbers, writing a dated report to `docs/bench/`.
 
 ### Changed
@@ -311,7 +311,7 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 ## [0.2.16] - 2026-08-26
 
 ### Added
-- **`make constrained`** (`bench/constrained.sh` + `bench/constrained.py`) — a reproducible
+- **`make constrained`** (`bench/constrained.sh` + `bench/constrained.py`): a reproducible
   constrained-vCPU probe. Runs `umap_project` *and* `cluster` at several n under
   `docker --cpus=0.5`, `1` and `2` (a CFS quota, the same mechanism AWS Fargate's cgroup uses to
   meter CPU) and writes a dated table to `docs/bench/`. It installs a wheel built from the working
@@ -321,14 +321,14 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 
   MEASURED, and it does **not** match production in absolute terms: at 0.5 vCPU this probe fits
   n=250/500/1000/5000 in 3.5/2.8/5.6/33.2 s against Fargate's observed 7.6/28/83/270 s. A local cap
-  reproduces Fargate's mechanism but not its hardware — half a core of a workstation CPU is far
+  reproduces Fargate's mechanism but not its hardware. Half a core of a workstation CPU is far
   more compute than half a shared Fargate vCPU, and the container still sees every host core. The
   probe's value is drift on a fixed host, not absolute parity; the report says so.
 
 ## [0.2.15] - 2026-08-26
 
 ### Added
-- **Docs site** — a navigable MkDocs Material site published to GitLab Pages by a `pages` job on
+- **Docs site**: a navigable MkDocs Material site published to GitLab Pages by a `pages` job on
   `main`: Home, Projection, Clustering, In a server, Speed and quality, Large inputs, The native
   accelerator, Benchmark reports, Guarantees and reproducibility, API, Contributing. The API page
   is generated from the source by mkdocstrings. Every prose page pulls its text out of `README.md`
@@ -345,11 +345,11 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 ## [0.2.14] - 2026-08-26
 
 ### Added
-- `make bench-report` (`bench/report.py`) — one command that regenerates every benchmark number
+- `make bench-report` (`bench/report.py`): one command that regenerates every benchmark number
   the READMEs quote into a dated report under `docs/bench/`: projection quality (fastumap vs
-  umap-learn vs PCA on MNIST — wall time, overlap@15, global distance correlation) and k-means
+  umap-learn vs PCA on MNIST: wall time, overlap@15, global distance correlation) and k-means
   (wall time *and* inertia, native kernel vs numpy). The report records the CPU, core count, RAM,
-  platform, Python and every package version, plus the load average — and prints a warning banner
+  platform, Python and every package version, plus the load average. It prints a warning banner
   when the machine was busy enough to distort wall times.
 
 ### Changed
@@ -364,14 +364,14 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 - The x86_64 manylinux wheel is now cross-built with zig against glibc 2.17, so it is tagged
   `manylinux_2_17_x86_64.manylinux2014_x86_64` instead of the builder image's own
   `manylinux_2_34` (MEASURED locally: `fastumap-0.2.12-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`).
-  Hosts with glibc < 2.34 — Ubuntu 20.04, Amazon Linux 2, older CentOS — get the wheel instead of
+  Hosts with glibc < 2.34 (Ubuntu 20.04, Amazon Linux 2, older CentOS) get the wheel instead of
   falling back to the sdist + a Rust toolchain. The native build stays as a fallback, so a zig
   flake still ships an x86_64 wheel with the old, narrower floor. CI + packaging only.
 
 ## [0.2.12] - 2026-08-26
 
 ### Added
-- **`hdbscan(...)` and `cluster(method="hdbscan")`** — hierarchical density clustering. Same job as
+- **`hdbscan(...)` and `cluster(method="hdbscan")`**: hierarchical density clustering. Same job as
   `dbscan` but with no `eps` to pick, so clusters of *different* densities are found together:
   core distances inflate the kNN edges into mutual-reachability distances, an MST over those gives
   the single-linkage hierarchy, branches under `min_cluster_size` are condensed away as noise, and
@@ -385,7 +385,7 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 ## [0.2.11] - 2026-08-25
 
 ### Added
-- **densMAP** — `umap_project(x, 2, densmap=True)` (and `fit(densmap=True)`), the density-preserving
+- **densMAP**: `umap_project(x, 2, densmap=True)` (and `fit(densmap=True)`), the density-preserving
   UMAP variant. It keeps dense regions dense and sparse regions sparse instead of flattening local
   density. A faithful port of umap-learn's density gradient: verified to lift the original-vs-
   embedding density correlation from ~0.02 to ~0.90 on a mixed-density dataset, matching umap-learn's
@@ -396,8 +396,8 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 ## [0.2.10] - 2026-08-25
 
 ### Added
-- **`dbscan(...)` and `cluster(method="dbscan")`** — density clustering. Finds clusters of any
-  shape and labels outliers `-1`, with no `n_clusters` to pick — the canonical clusterer after a
+- **`dbscan(...)` and `cluster(method="dbscan")`**: density clustering. Finds clusters of any
+  shape and labels outliers `-1`, with no `n_clusters` to pick. The canonical clusterer after a
   UMAP reduction, and it finds non-convex clusters k-means cannot (two-moons at purity 1.0). Core
   points (≥ `min_samples` within `eps`) grow clusters by union-find, borders join, the rest is
   noise. `eps=None` auto-picks the median k-distance. Neighbours come from fastumap's own kNN
@@ -409,7 +409,7 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 ### Added
 - **Project to any output dimension**, not just 2 or 3. `umap_project(x, dimensions=10)` now works.
   The SGD and spectral init were always dimension-agnostic; only one validation line forbade it.
-  Use a mid dimension (~10) when the goal is to *cluster* the result — umap-learn's own advice is
+  Use a mid dimension (~10) when the goal is to *cluster* the result: umap-learn's own advice is
   to reduce to ~10 dims, not 2, before clustering. `dimensions` must be in `[1, n_features]`.
 - **`precomputed_knn`** on `umap_project` / `fit`: pass your own `(indices, distances)` (each
   `(n, k)`, column 0 the point itself, e.g. from a faiss index you already built) to skip the
@@ -445,10 +445,10 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 ## [0.2.5] - 2026-08-25
 
 ### Added
-- `choose_k(embeddings, *, k_min=2, k_max=10, ...)` — pick `n_clusters` automatically by the
+- `choose_k(embeddings, *, k_min=2, k_max=10, ...)`: pick `n_clusters` automatically by the
   inertia elbow (kneedle knee of the inertia-vs-k curve). Runs k-means across the range and
   returns the sharpest bend; on more than `max_samples` rows it searches a deterministic
-  subsample to bound cost. A heuristic — recovers the true k give or take one on clear cluster
+  subsample to bound cost. A heuristic: recovers the true k give or take one on clear cluster
   structure (verified on separated blobs at k=3/5/7). Exported at the top level.
 
 ## [0.2.4] - 2026-08-25
@@ -462,7 +462,7 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 ## [0.2.3] - 2026-08-25
 
 ### Added
-- `assign_clusters(embeddings, centroids, *, metric=...)` — the predict half of a fit/predict
+- `assign_clusters(embeddings, centroids, *, metric=...)`: the predict half of a fit/predict
   split. Assigns new rows to the nearest of a fitted `cluster(..., return_centroids=True)` /
   `kmeans` centroid set without re-clustering, reusing the same blocked nearest-centroid step so
   peak memory stays bounded. `metric` must match the fit (`"cosine"` unit-normalises, as fitting
@@ -473,9 +473,9 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 ### Added
 - `cluster(..., return_centroids=True)` returns a `ClusterResult` (labels, centroids, inertia)
   instead of just labels, so you can compare runs or pick `n_clusters` by inertia without a second
-  pass. `inertia` is the k-means objective — the sum of squared distances to the assigned centroid,
+  pass. `inertia` is the k-means objective: the sum of squared distances to the assigned centroid,
   computed one block at a time so the (n, d) difference is never fully materialised. `ClusterResult`
-  is exported at the top level. The default (`return_centroids=False`) is unchanged — still a plain
+  is exported at the top level. The default (`return_centroids=False`) is unchanged. Still a plain
   label array. Works for both `method="kmeans"` and `method="spectral"` (centroids in the input
   space).
 
@@ -491,11 +491,11 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 ## [0.2.0] - 2026-08-25
 
 ### Changed
-- **The native kernels are now built into `fastumap` itself** — there is no separate
+- **The native kernels are now built into `fastumap` itself**. There is no separate
   `fastumap-accel` package any more. `fastumap` is a maturin-built package: the pure-Python
   `src/fastumap/` plus a compiled Rust extension (`fastumap._accel`, the SGD + k-means kernels)
   shipped in the same abi3 wheel (`cp311-abi3`; Linux x86_64 and aarch64/Graviton, with an sdist
-  for other platforms). The kernels are used automatically — no `pip install fastumap[accel]`,
+  for other platforms). The kernels are used automatically: no `pip install fastumap[accel]`,
   no accel-detection dance. `import fastumap` stays in the ~15 ms range because the extension is
   imported lazily. On a platform without a prebuilt wheel, pip builds from the sdist, which needs
   a Rust toolchain. The pure-NumPy path remains only as a runtime fallback for an unbuilt source
@@ -510,7 +510,7 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 ### Added
 - Optional native accelerator wiring. If `fastumap-accel` (a Rust reimplementation of the
   SGD, `rust/`) is importable, `optimize_layout` uses it for the default `chunk_count<=1`
-  path; otherwise the pure-numpy path runs unchanged. The base install stays numpy+scipy —
+  path; otherwise the pure-numpy path runs unchanged. The base install stays numpy+scipy:
   the accelerator is opt-in (`pip install fastumap-accel`). It does umap-learn's true
   in-place walk, so it is **faster and higher quality**: measured ~1.7–1.9× vs the numpy SGD
   with better overlap (0.244 vs 0.233 at n=1000). Deterministic; a stub-less compiled module
@@ -521,7 +521,7 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 
 ### Changed
 - `UMAPModel.train` is now cached as **float32**, halving the model's memory footprint
-  (~40 MB → ~20 MB for a 5000 × 1024 model — the concern raised in GitLab #4, and what makes
+  (~40 MB → ~20 MB for a 5000 × 1024 model: the concern raised in GitLab #4, and what makes
   many cached copies affordable on a memory-constrained Lambda/ECS worker). `transform`
   upcasts to float64 for the distance compute, so quality and determinism are unchanged.
 
@@ -544,7 +544,7 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 ### Fixed
 - `fastumap.__version__` now derives from the installed distribution metadata
   (`importlib.metadata`) instead of a hardcoded string, so it can no longer drift from the
-  published version (GitLab #1 — 0.1.6 reported `0.1.0`). pyproject stays the single source
+  published version (GitLab #1: 0.1.6 reported `0.1.0`). pyproject stays the single source
   of truth (like musil); a test asserts `__version__` == metadata == pyproject.
 
 ### Added
@@ -565,7 +565,7 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 
 ### Added
 - `fit()` → `UMAPModel` and `transform(model, new)` (roadmap #13): place new points into an
-  existing layout without refitting — what makes a drift view incremental instead of a full
+  existing layout without refitting: what makes a drift view incremental instead of a full
   recompute per request. New points get their neighbours in the training set (`knn_between`),
   a membership-weighted-average seed, then a fixed-tail optimiser (`optimize_transform`) that
   moves only the new points while the training layout stays frozen. Deterministic, does not
@@ -576,7 +576,7 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 ## [0.1.4] - 2026-08-23
 
 ### Added
-- `metric="cosine"` on `umap_project` / `spectral_project` (roadmap #14) — the metric that
+- `metric="cosine"` on `umap_project` / `spectral_project` (roadmap #14): the metric that
   matters for text/CLS embeddings. Implemented as a blocked-brute-force cosine kNN
   (`knn_cosine`): L2-normalise rows once, then the block dot product is cosine similarity,
   distance = 1 − sim. Deterministic. A test shows it beats euclidean on directional
@@ -622,11 +622,11 @@ This minor collects the behaviour changes shipped as patches in 0.2.32 to 0.2.34
 Initial port of a working single-file numpy+scipy UMAP into a typed, tested library.
 
 ### Added
-- `umap_project(matrix, dimensions, ...)` — full fuzzy-simplicial-set UMAP in pure
+- `umap_project(matrix, dimensions, ...)`: full fuzzy-simplicial-set UMAP in pure
   numpy + scipy: blocked brute-force kNN, `smooth_knn_dist` (vectorised binary search),
   fuzzy-union symmetrisation, spectral initialisation via `scipy.sparse.linalg.eigsh`,
   `find_ab_params` via `scipy.optimize.curve_fit`, and a vectorised attract/repel SGD.
-- `spectral_project(matrix, dimensions, ...)` — the spectral initialisation alone.
+- `spectral_project(matrix, dimensions, ...)`: the spectral initialisation alone.
 - Metrics: `neighbor_overlap`, `global_distance_correlation`, `random_layout`.
 - 2D and 3D output, both first-class.
 - Deterministic given a seed (pinned ARPACK start vector + seeded negative sampler).

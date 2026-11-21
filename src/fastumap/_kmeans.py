@@ -116,11 +116,9 @@ def kmeans_core(
     thread-unsafe re-entry into ``threadpool_limits``.
 
     ``n_init`` runs the fit that many times from different seeds and keeps the lowest-inertia
-    result. ``None`` (default) is a single run: fast, and enough for full Lloyd and for mini-batch
-    on the overlapping data real embeddings produce. Raise it for the mini-batch path on
-    well-separated clusters, where its running-mean update can settle into a bad optimum a different
-    seed escapes (n_init=5 recovers full-Lloyd parity on the adversarial blobs). Deterministic: the
-    seeds are ``random_state + i`` and the best is chosen by inertia."""
+    result. ``None`` (default) is a single run. Pass ``n_init=5`` on well-separated clusters for
+    extra assurance. Deterministic: the seeds are ``random_state + i`` and the best is chosen by
+    inertia."""
     if n_clusters < 1:
         raise ValueError("n_clusters must be >= 1")
     if n_init is not None and n_init < 1:

@@ -43,7 +43,7 @@ pip install fastumap[ann]            # adds an approximate kNN backend for large
 
 ```python
 import numpy as np
-from fastumap import umap_project, spectral_project
+from fastumap import umap_project
 
 x = np.random.default_rng(0).normal(size=(1000, 50))
 
@@ -60,7 +60,8 @@ dm  = umap_project(x, 2, densmap=True)       # densMAP: keep dense/sparse region
   nearest-neighbour search. Neighbour overlap is preserved to within about 0.01. Off by default.
 
 `umap_project` also accepts `n_neighbors`, `min_dist`, `spread`, `n_epochs`,
-`negative_sample_rate`, `random_state`, and `chunk_count`.
+`negative_sample_rate`, `initial_alpha`, `random_state`, `chunk_count`, `knn`,
+`precomputed_knn`, `init`, and `return_model`.
 
 <!-- --8<-- [end:usage] -->
 ## Supervised projection
@@ -70,6 +71,12 @@ Categorical labels passed as `y` inform the layout: same-label points attract, s
 is separable in the input space stays separable in 2-D instead of interleaving.
 
 ```python
+import numpy as np
+from fastumap import umap_project
+
+x = np.random.default_rng(0).normal(size=(500, 10))
+labels = np.array([0] * 250 + [1] * 250)
+
 xy = umap_project(x, 2, y=labels)                     # labels: one int per point, -1 = unlabelled
 xy = umap_project(x, 2, y=labels, target_weight=0.9)  # lean harder on the labels
 ```
@@ -91,7 +98,10 @@ kernel, with no external clustering library. It does not compute a 2-D layout fi
 is an iterative SGD and takes minutes at a million points, and clustering does not need it.
 
 ```python
+import numpy as np
 from fastumap import cluster
+
+embeddings = np.random.default_rng(0).normal(size=(500, 10))
 
 labels = cluster(embeddings, method="kmeans", n_clusters=20)     # k-means++ / Lloyd
 labels = cluster(embeddings, method="spectral", n_clusters=20)   # non-convex clusters
@@ -114,21 +124,23 @@ Further options:
 
 - `return_centroids=True` returns a `ClusterResult(labels, centroids, inertia)` instead of labels
   alone, which is what is needed to compare runs or choose k.
-- `choose_k(x, k_min=2, k_max=10)` selects `n_clusters` by the elbow of the log-inertia curve. It is a heuristic;
-  it lands on the true k give or take one when the clusters are clear.
+- `choose_k(x, k_min=2, k_max=10)` selects `n_clusters` by the elbow of the log-inertia curve.
+  It is a heuristic; it lands on the true k give or take one when the clusters are clear.
 - `assign_clusters(x_new, centroids)` labels new points against already-fitted centroids, without
   re-clustering.
 
-Above 50,000 points the native k-means kernel (matrixmultiply SIMD GEMM with rayon over row
-blocks, compiled into the wheel) replaces the inner loop. It clusters 1,000,000 × 128 into 64
-groups in about 10 s on a 16-core machine, measured on SIFT1M, against minutes for the numpy path.
+The native k-means kernel (matrixmultiply SIMD GEMM with rayon over row blocks, compiled into the
+wheel) runs at every size.
 
 Above 200,000 points it also switches to mini-batch k-means, which samples `batch_size` rows per
 iteration rather than sweeping all of them. Measured on SIFT1M inside a `docker --cpus=2`
 container: 5.2 s against full Lloyd's 25.3 s, at 1.010× the inertia.
 
 ```python
+import numpy as np
 from fastumap import cluster, kmeans
+
+x = np.random.default_rng(0).normal(size=(1000, 10))
 
 labels = cluster(x, method="kmeans", n_clusters=64)   # mini-batch above 200k rows
 labels, cent = kmeans(x, 64, batch_size=0)            # force full Lloyd at any size
@@ -136,11 +148,7 @@ labels, cent = kmeans(x, 64, batch_size=5000)         # force mini-batch, with a
 ```
 
 The switch is on `n` alone and never on the core count, so the same input and seed produce the
-same labels on any machine. One limitation: on perfectly separated clusters, mini-batch can leave
-two centroids inside one group, measured at 4.8× worse inertia on synthetic blobs 8σ apart. Its
-running-mean update cannot move a centroid back across an empty gap, where full Lloyd's recompute
-can. Real embeddings overlap and do not trigger this (MNIST measures 1.013× Lloyd), and
-`batch_size=0` disables the switch.
+same labels on any machine. `batch_size=0` disables the switch.
 
 <!-- --8<-- [end:clustering] -->
 ## Quality relative to umap-learn
@@ -171,7 +179,7 @@ is the trade-off UMAP addresses.
 
 umap-learn's times reuse the numba compilation from its first fit in the same process. A fresh
 process pays roughly 20 s of compilation on every invocation, which fastumap does not pay. Above
-about 50,000 points fastumap's exact O(n²) neighbour search becomes the bottleneck;
+roughly 20,000 points fastumap's exact O(n²) neighbour search becomes the bottleneck;
 `pip install fastumap[ann]` addresses that, described below. Raising `chunk_count` (default 1)
 recovers most of the remaining local-overlap gap at proportional cost, and remains deterministic.
 
@@ -217,8 +225,13 @@ Recomputing the whole layout on every request is unnecessary. Fit once, then pla
 the existing layout:
 
 ```python
+import numpy as np
 from fastumap import fit, transform
 from fastumap.projection import UMAPModel
+
+rng = np.random.default_rng(0)
+window = rng.normal(size=(500, 10))   # training data
+pts = rng.normal(size=(5, 10))        # new points to place
 
 model = fit(window, 2)                                 # cache it
 xy, fit_distance = transform(model, pts, return_distances=True)   # coords + per-point fit
@@ -251,17 +264,16 @@ sparse input are not supported: densify sparse input first, and refit when the w
 
 fastumap ships a compiled Rust extension, `fastumap._accel`, inside the wheel. It reimplements the
 SGD layout kernel and the k-means kernel. The prebuilt wheels (abi3, Python 3.11+; Linux x86_64
-and aarch64/Graviton, musllinux for Alpine, and Windows x86_64) carry it, so it is used
-automatically. macOS has no prebuilt wheel yet and builds from the sdist, which requires a Rust
-toolchain, as does any other platform without a prebuilt wheel.
+and aarch64/Graviton, musllinux for Alpine, macOS arm64 and x86_64, and Windows x86_64) carry it,
+so it is used automatically. Any other platform builds from the sdist, which requires a Rust
+toolchain.
 
 The extension is required. If it is absent, for instance in an unbuilt source checkout, fastumap
 raises `ImportError` and tells you to install the wheel or run `uv sync`. It does not fall back to
 a slower path without telling you.
 
-Because the kernel performs umap-learn's in-place walk rather than the fallback's per-epoch
-approximation, it produces a different, higher-quality layout for the same seed. The active path
-can be queried:
+The kernel runs umap-learn's in-place SGD walk. `densmap=True` and `chunk_count > 1` use a numpy
+loop instead and are not affected by this path. The active path can be queried:
 
 ```python
 import fastumap

@@ -17,7 +17,7 @@ from .neighbors import knn_euclidean
 def neighbor_overlap(original: FloatArray, projected: FloatArray, k: int) -> float:
     """Mean share of each point's ``k`` input-space neighbours kept after projection.
 
-    Chance level is about ``k/(n-1)`` — always compare against a random-layout control
+    Chance level is about ``k/(n-1)``: always compare against a random-layout control
     (see :func:`random_layout`).
     """
     if k < 1:
@@ -61,6 +61,6 @@ def global_distance_correlation(
 
 
 def random_layout(n: int, dimensions: int, *, random_state: int = 0) -> FloatArray:
-    """A Gaussian random layout — the control every overlap number is read against."""
+    """A Gaussian random layout: the control every overlap number is read against."""
     rng = np.random.default_rng(random_state)
     return rng.normal(size=(n, dimensions))

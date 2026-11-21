@@ -25,6 +25,7 @@ Generated from the source. Everything here is exported at the top level: `from f
         - choose_k
         - assign_clusters
         - ClusterResult
+        - ChooseKResult
 
 ## Metrics
 

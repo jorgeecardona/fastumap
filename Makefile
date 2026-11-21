@@ -28,7 +28,7 @@ test: ## run the test suite with coverage -- the CI :test task
 
 check: lint typecheck test ## the full CI test stage: lint + typecheck + test
 
-docs: ## build the mkdocs site strictly (as the pages job / Read the Docs do) -- the CI :docs task
+docs: ## build the mkdocs site strictly (as the pages job does) -- the CI :docs task
 	moon run :docs
 
 build: ## build sdist + wheel into dist/ -- the CI :build task

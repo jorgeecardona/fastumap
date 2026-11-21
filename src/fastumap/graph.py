@@ -1,9 +1,9 @@
 """Fuzzy simplicial set: turn a kNN graph into a symmetric weighted graph.
 
 The three UMAP steps live here:
-  1. smooth_knn_dist  — per-point local scaling (rho_i, sigma_i)
-  2. compute_membership — directed edge weights exp(-(d - rho)/sigma)
-  3. fuzzy_simplicial_set — the fuzzy-union symmetrisation, via the scipy shim
+  1. smooth_knn_dist: per-point local scaling (rho_i, sigma_i)
+  2. compute_membership: directed edge weights exp(-(d - rho)/sigma)
+  3. fuzzy_simplicial_set: the fuzzy-union symmetrisation, via the scipy shim
 
 Plus find_ab_params (output-kernel fit) and make_epochs_per_sample (edge schedule).
 """

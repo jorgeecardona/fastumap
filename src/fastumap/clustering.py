@@ -646,10 +646,8 @@ def kmeans(
     - a positive int: force mini-batch with that batch size.
 
     ``n_init`` restarts the fit from that many seeds and keeps the lowest-inertia result. ``None``
-    (default) is a single run. Mini-batch can settle into a bad optimum on well-separated clusters
-    (4.8x worse inertia than full Lloyd on adversarial blobs); it is fine on the overlapping data
-    real embeddings produce (~1.01x), so the default stays a single fast run. If your data is
-    well-separated, pass ``n_init=5`` to recover full-Lloyd parity. Runtime scales with ``n_init``.
+    (default) is a single run. Pass ``n_init=5`` on well-separated clusters for extra assurance.
+    Runtime scales with ``n_init``.
     """
     return _kmeans.kmeans_core(
         x,

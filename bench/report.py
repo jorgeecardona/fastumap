@@ -9,15 +9,15 @@ measured on, so "26 s at n=5000" is a claim someone else can check.
 
 Two tables:
 
-- **Projection quality** — fastumap vs umap-learn vs PCA on MNIST at several sizes: wall time,
+- **Projection quality**: fastumap vs umap-learn vs PCA on MNIST at several sizes: wall time,
   neighbour overlap@15, and the global pairwise-distance Spearman correlation. This is the
   README's "Quality relative to umap-learn" table.
-- **Clustering** — k-means wall time *and* inertia (the k-means objective), native kernel vs the
+- **Clustering**: k-means wall time *and* inertia (the k-means objective), native kernel vs the
   numpy path, so speed is never quoted without a quality number beside it. Synthetic 128-d data by
   default; `--sift` uses the real SIFT1M descriptors that bench/cluster_bench.py downloads.
 
 scikit-learn and umap-learn are bench-only dependencies. A missing umap-learn is reported in the
-table as "(not installed)" rather than silently dropped — a table with a hole in it is honest, a
+table as "(not installed)" rather than silently dropped: a table with a hole in it is honest; a
 table that quietly omits the comparison is not.
 """
 
@@ -82,7 +82,7 @@ def _cpu_model() -> str:
 def _load_average() -> tuple[str, bool]:
     """1/5/15-minute load average, and whether the machine was busy enough to distort wall times.
 
-    Every timing here is wall-clock, so a contended machine inflates all of them — and unevenly,
+    Every timing here is wall-clock, so a contended machine inflates all of them: and unevenly,
     since BLAS-heavy PCA and single-threaded SGD lose different amounts. Recording the load is what
     makes a slow row readable as "the box was busy" instead of "the library got slower".
     """
@@ -156,7 +156,7 @@ def projection_rows(dataset: str, sizes: list[int]) -> list[str]:
 
 
 def _inertia(x: FloatArray, labels: np.ndarray, k: int) -> float:
-    """Sum of squared distances to each point's assigned centroid — the k-means objective."""
+    """Sum of squared distances to each point's assigned centroid: the k-means objective."""
     total = 0.0
     for c in range(k):
         pts = x[labels == c]
@@ -229,7 +229,7 @@ date: {date.today().isoformat()}
 generated_by: bench/report.py
 ---
 
-# fastumap benchmark report — {date.today().isoformat()}
+# fastumap benchmark report: {date.today().isoformat()}
 {warning}
 Generated, not hand-written. Regenerate with:
 
@@ -258,13 +258,13 @@ only means something when the machine rows match.
 |---|---|
 {version_lines}
 
-## Projection quality — {dataset} (784-dimensional)
+## Projection quality: {dataset} (784-dimensional)
 
 fastumap vs umap-learn vs PCA at n = {", ".join(str(s) for s in sizes)}, seed {_SEED}.
 
-- **overlap@15** — the fraction of each point's 15 input-space neighbours still among its 15
+- **overlap@15**: the fraction of each point's 15 input-space neighbours still among its 15
   nearest neighbours in the embedding. Local structure. Higher is better.
-- **global corr** — Spearman correlation between input-space and embedding pairwise distances.
+- **global corr**: Spearman correlation between input-space and embedding pairwise distances.
   Global structure. Higher is better.
 
 | n | method | wall time | overlap@15 | global corr |
@@ -275,10 +275,10 @@ umap-learn's wall times in a single process reuse the numba compilation from its
 fresh process pays that compilation (roughly 20 s) on every invocation. fastumap has no
 compilation step.
 
-## Clustering — k-means
+## Clustering: k-means
 
 {cluster_source}. Inertia is the k-means objective (sum of squared distances to the assigned
-centroid): lower is tighter. It sits beside the wall time on purpose — a faster k-means that
+centroid): lower is tighter. It sits beside the wall time on purpose: a faster k-means that
 optimises less is not faster.
 
 | implementation | n | k | wall time | inertia |

@@ -37,7 +37,7 @@ def _validate(matrix: FloatArray, dimensions: int, *, min_points: int = 2) -> Fl
     if hasattr(matrix, "toarray"):  # scipy.sparse matrices have it; numpy arrays do not
         raise TypeError(
             "fastumap takes a dense numpy array, not a sparse matrix; "
-            "densify first with matrix.toarray() (sparse input is not supported — see README)"
+            "densify first with matrix.toarray() (sparse input is not supported; see README)"
         )
     x = np.ascontiguousarray(matrix, dtype=np.float64)
     if x.ndim != 2:
@@ -46,7 +46,7 @@ def _validate(matrix: FloatArray, dimensions: int, *, min_points: int = 2) -> Fl
         raise ValueError("dimensions must be >= 1")
     if dimensions > x.shape[1]:
         raise ValueError(
-            f"dimensions ({dimensions}) cannot exceed n_features ({x.shape[1]}) — not a reduction"
+            f"dimensions ({dimensions}) cannot exceed n_features ({x.shape[1]}) (not a reduction)"
         )
     if x.shape[0] < min_points:
         raise ValueError(f"need at least {min_points} point(s) to project")
@@ -81,9 +81,9 @@ def _original_radius(work: FloatArray, graph: FuzzyGraph) -> FloatArray:
     """densMAP's original-space local radius per vertex, z-scored.
 
     It is the membership-weighted mean of squared edge distances (in the kNN space), logged and
-    then standardised. A faithful port of umap-learn's density setup. The z-score makes it robust
-    to whether the graph stores one or both directions of each edge (both scale numerator and
-    denominator equally).
+    then standardised. A faithful port of umap-learn's density setup. The z-score makes it
+    unaffected by whether the graph stores one or both directions of each edge (both scale numerator
+    and denominator equally).
     """
     diff = work[graph.head] - work[graph.tail]
     edge_d2: FloatArray = np.einsum("ij,ij->i", diff, diff)
@@ -183,7 +183,7 @@ class UMAPModel:
             if written != _MODEL_FORMAT:
                 raise ValueError(
                     f"UMAPModel .npz is format {written}; this fastumap reads format "
-                    f"{_MODEL_FORMAT} — re-save the model with a matching version."
+                    f"{_MODEL_FORMAT}: re-save the model with a matching version."
                 )
             scalars = data["scalars"]
             ints = data["ints"]

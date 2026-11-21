@@ -2,8 +2,8 @@
 
 Two things can be true at once: a cgroup CFS quota is visible inside the container, *and* the
 container still reports the host's full core count. When that happens, NumPy's BLAS sizes its
-thread pool to those cores and oversubscribes the quota. Under concurrent load — several workers
-each spawning that many threads against a fraction of a vCPU — the threads thrash. Measured under
+thread pool to those cores and oversubscribes the quota. Under concurrent load (several workers
+each spawning that many threads against a fraction of a vCPU) the threads thrash. Measured under
 ``docker --cpus=0.5`` on a 16-core host with 4 worker processes: per-call time was ~70 s, versus
 ~42 s with threads pinned (~1.6x). Reading the quota and limiting the pool to it removes that
 penalty. This fires where the quota is visible in-container: ``docker --cpus``, Kubernetes / EKS
@@ -15,7 +15,7 @@ the task runs in a micro-VM. Its ``os.cpu_count()`` already reports the small ta
 not a host's dozens, so BLAS does not oversubscribe there in the first place. Wherever no quota
 is visible (a notebook, a full server, Fargate) nothing is capped and BLAS is left alone.
 
-``threadpoolctl`` is imported lazily — only when a cap actually applies. So ``import fastumap``
+``threadpoolctl`` is imported lazily. It loads only when a cap actually applies, so ``import fastumap``
 and uncapped runs never touch it.
 """
 

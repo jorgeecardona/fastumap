@@ -1,5 +1,5 @@
 [project]
-# fastumap — fast, import-light UMAP and clustering. umap-learn's kernels are numba, which
+# fastumap: fast, import-light UMAP and clustering. umap-learn's kernels are numba, which
 # compiles with LLVM the first time you import it (seconds on a laptop, minutes on a small box);
 # fastumap compiles at BUILD time instead, so it imports in milliseconds. Mostly numpy + scipy,
 # with native SGD/k-means kernels (fastumap._accel) built into the wheel by maturin.
@@ -44,11 +44,11 @@ dependencies = [
 [project.optional-dependencies]
 # The native SGD + k-means kernels are now built into the package (fastumap._accel); there is no
 # separate fastumap-accel install any more.
-# `pip install fastumap[ann]` adds an approximate kNN backend for inputs above ~10k points,
-# where the exact O(n^2) kNN dominates. faiss-cpu (Meta) is HNSW under the hood and — unlike
-# hnswlib, which is sdist-only and compiles on the machine — ships abi3 wheels for manylinux
-# x86_64/aarch64, macOS, musllinux and Windows, so it installs without a compiler (which is the
-# whole point of this library). The base install needs no ann backend; exact is the default.
+# `pip install fastumap[ann]` adds an approximate kNN backend for inputs above roughly 20,000
+# points, where the exact O(n^2) kNN dominates. faiss-cpu (Meta) uses HNSW and, unlike hnswlib
+# (sdist-only, compiles on the machine), ships abi3 wheels for manylinux x86_64/aarch64, macOS,
+# musllinux and Windows, so it installs without a compiler. The base install needs no ann backend;
+# exact is the default.
 ann = ["faiss-cpu>=1.8"]
 # docs are an *extra* (installable via pip) so a docs site can build them.
 docs = [
@@ -83,7 +83,7 @@ features = ["pyo3/extension-module"]
 
 [dependency-groups]
 # The grading harness compares us against umap-learn; scikit-learn supplies datasets
-# and PCA baselines; psutil measures peak RSS. None of these are runtime deps — a test
+# and PCA baselines; psutil measures peak RSS. None of these are runtime deps: a test
 # asserts umap/numba are never imported by `import fastumap`.
 dev = [
     "ruff>=0.6",
@@ -104,8 +104,8 @@ source = ["fastumap"]
 # Branch coverage as well as line: catches an untested side of a conditional that line coverage
 # alone would call covered. Currently 92%, above the fail_under floor below.
 branch = true
-# grade.py is the `python -m fastumap.grade` CLI that prints the umap-learn comparison table —
-# exercised by `make grade`, not the unit suite — so it is omitted from the library coverage gate.
+# grade.py is the `python -m fastumap.grade` CLI that prints the umap-learn comparison table
+# (exercised by `make grade`, not the unit suite), so it is omitted from the library coverage gate.
 omit = ["*/fastumap/grade.py"]
 
 [tool.coverage.report]

@@ -1,4 +1,4 @@
-"""fastumap — fast, import-light UMAP and clustering.
+"""fastumap: fast, import-light UMAP and clustering.
 
 The public surface is small on purpose. ``umap_project`` / ``spectral_project`` build layouts.
 ``cluster`` / ``assign_clusters`` do clustering. There are also the grading metrics.
